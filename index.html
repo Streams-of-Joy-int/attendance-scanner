@@ -257,7 +257,7 @@
   </style>
 </head>
 <body>
-  <div id="app"><main class="wrap"><p class="loading">Loading the scanner&#x2026;</p></main></div>
+  <div id="app"><main class="wrap"><p class="loading">Loading the scanner\u2026</p></main></div>
   <noscript><main class="wrap"><p>This page needs JavaScript. Please use Chrome or Safari.</p></main></noscript>
   <script type="application/json" id="page-data"><?!= pageData ?></script>
   <script>
@@ -828,7 +828,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         letterhead(D),
         h('main', { class: 'wrap' },
           h('h1', { text: D.allClasses ? 'All classes' : D.attendantClass || (D.isClassDay ? 'Not on duty today' : 'Your duties') }),
-          h('p', { class: 'meta' }, 'Scanning as ' + D.attendantName + (D.head ? ' (head attendant)' : ''), h('br'), D.dateText,
+          h('p', { class: 'meta' }, 'Scanning as ' + D.attendantName + (D.head ? ' (head attendant)' : '') + (D.attendantId ? ' \u00b7 ' + D.attendantId : ''), h('br'), D.dateText,
             D.lateText ? [h('br'), D.lateText] : null, D.scanText ? [h('br'), D.scanText] : null),
           ui.banners,
           ui.duty,
@@ -1091,13 +1091,14 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       ui.typeToggle = h('button', { type: 'button', class: 'linkish', 'aria-expanded': 'false', 'aria-controls': 'type-form',
         text: 'Type the ID instead', onclick: toggleTyped });
       ui.typeInput = h('input', { id: 'type-id', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false',
-        maxlength: '20', placeholder: 'K7Q2-M9XD', 'aria-describedby': 'type-help' });
+        maxlength: '24', placeholder: 'K7Q2-M9XD or 0803 123 4567', 'aria-describedby': 'type-help' });
       ui.typeError = h('p', { class: 'type-error', role: 'alert', hidden: true });
       ui.typeForm = h('form', { id: 'type-form', class: 'type-form', hidden: true, novalidate: true, onsubmit: onTyped },
-        h('label', { for: 'type-id', text: 'Student ID' }),
+        h('label', { for: 'type-id', text: 'Student ID or phone number' }),
         h('div', { class: 'type-row' }, ui.typeInput, h('button', { type: 'submit', class: 'button primary', text: 'Mark' })),
         ui.typeError,
-        h('p', { id: 'type-help', class: 'help', text: "Only if a code won't scan. The ID is printed under the student's code, like K7Q2-M9XD." }));
+        h('p', { id: 'type-help', class: 'help', text: "Only if a code won't scan, or the student has no code with them: type the ID printed under their code, " +
+          'like K7Q2-M9XD, or the phone number they signed up with.' }));
       add(box, h('div', null, ui.typeToggle, ui.typeForm));
 
       if (IN_GOOGLE && D.liveLink && !live) {
@@ -1147,10 +1148,24 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       ui.soundButton = h('button', { type: 'button', class: 'linkish', onclick: toggleSound });
       updateSoundButton();
       return h('footer', { class: 'wrap' },
+        buildHelp(),
         h('p', null, ui.soundButton),
         h('p', { text: live && !IN_GOOGLE
           ? 'Keep this page open while you scan. To find it quickly next time, add it to your home screen from the browser menu.'
           : 'Keep this page open during class. The lists refresh every minute.' }));
+    }
+
+    /** "Need help? Read the Attendants' Manual" (Settings: the manual links), or nothing. */
+    function buildHelp() {
+      var list = (D.manuals || []).filter(function (m) { return m && m.link && m.text; });
+      if (!list.length) return null;
+      var p = h('p', { class: 'help-links' }, 'Need help? Read the ');
+      list.forEach(function (m, i) {
+        if (i) add(p, i === list.length - 1 ? ' or the ' : ', the ');
+        add(p, h('a', { href: m.link, target: '_blank', rel: 'noopener', text: m.text }));
+      });
+      add(p, '.');
+      return p;
     }
 
     // ------------------------------------------------------------------
@@ -1285,9 +1300,12 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     function onTyped(e) {
       e.preventDefault();
       prepareSound();
-      var id = idFromText(ui.typeInput.value);
-      if (!id) {
-        ui.typeError.textContent = "That isn't a Student ID. It has 8 letters and numbers, like K7Q2-M9XD.";
+      var raw = ui.typeInput.value.trim();
+      var id = idFromText(raw);
+      var digits = raw.replace(/\D/g, '').length;
+      var phone = !id && /^\+?[\d\s().-]+$/.test(raw) && digits >= 7 && digits <= 15;   // the system finds the student by it
+      if (!id && !phone) {
+        ui.typeError.textContent = "That isn't a Student ID (8 letters and numbers, like K7Q2-M9XD) or a phone number.";
         ui.typeError.hidden = false;
         return;
       }
@@ -1295,7 +1313,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       if (st.busy) return;
       ui.typeInput.value = '';
       ui.typeInput.blur();   // closes the keyboard, so the result shows
-      submit(id, 'typed');
+      submit(id || raw, 'typed');
     }
 
     // ------------------------------------------------------------------
