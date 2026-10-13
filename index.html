@@ -2,22 +2,22 @@
 <html lang="en">
 <head>
   <!--
-    SCAN.HTML: the attendants' scanning page.
+    SCAN.HTML: the assistants' scanning page.
     The same file is used in two places, and works out by itself which one it is in:
-      1. In the management system (Apps Script). Each attendant's scanning link opens it.
-         Google doesn't allow live camera video there, so attendants take a photo of
+      1. In the management system (Apps Script). Each assistant's scanning link opens it.
+         Google doesn't allow live camera video there, so assistants take a photo of
          each code, or type the ID.
       2. On GitHub Pages, as the live scanner (optional, see the guide). There the
          camera reads codes continuously, and the page talks to the attendance
          system through its web app link.
     The line with "pageData" is filled in by Attendance.gs. On GitHub Pages it stays
-    as it is, and the page reads the attendant's link from its own address instead.
+    as it is, and the page reads the assistant's link from its own address instead.
     The QR code reader (jsQR) is the first script after that line.
-    At the end of class, the attendant taps Class ended: the end time and their answers to
-    the attendants' feedback questions go to the system (submitClassEnd in Feedback.gs).
-    An attendant's link scans only the class they are on duty in that day (Duties.gs); they tap
-    Check in when they arrive. The head attendant's link scans every class, and their page also
-    puts attendants on duty for the coming class days and shows the attendant sign-up link.
+    At the end of class, the assistant taps Class ended: the end time and their answers to
+    the assistants' feedback questions go to the system (submitClassEnd in Feedback.gs).
+    An assistant's link scans only the class they are on duty in that day (Duties.gs); they tap
+    Check in when they arrive. The head assistant's link scans every class, and their page also
+    puts assistants on duty for the coming class days and shows the assistant sign-up link.
   -->
   <base target="_top">
   <meta charset="utf-8">
@@ -95,6 +95,11 @@
     .banner { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
     .banner.warn { background: var(--warn-soft); color: var(--warn); }
     .banner.bad { background: var(--bad-soft); color: var(--bad); }
+    .queue { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 15px; }
+    .queue p { margin: 0; font-weight: 700; }
+    .queue button { margin-top: 8px; }
+    .queue ul { margin: 8px 0 0; padding-left: 18px; font-weight: 400; color: var(--ink); }
+    .queue li { margin: 2px 0; }
 
     /* The result of the last scan */
     .result { min-height: 96px; margin: 0 0 16px; padding: 16px; border: 2px solid var(--line); border-radius: 14px; background: var(--surface); }
@@ -112,6 +117,25 @@
     .who-sub { color: var(--muted); font-size: 15px; letter-spacing: .5px; }
     .result-text { margin: 0; overflow-wrap: anywhere; }
     .result-time { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    /* Kiosk mode: students scan their own codes at the door; only the camera and the result card show. */
+    body.kiosk #app > header, body.kiosk #app > footer { display: none; }
+    body.kiosk #app > main > * { display: none; }
+    body.kiosk #app > main > .result, body.kiosk #app > main > .stack, body.kiosk #app > main > .queue-box { display: block; }
+    body.kiosk .stack > *:not(.viewer) { display: none; }
+    body.kiosk #app > main { max-width: 760px; padding-top: 12px; }
+    body.kiosk .result { min-height: 32vh; font-size: 24px; text-align: center; }
+    body.kiosk .result-title { font-size: 44px; justify-content: center; }
+    body.kiosk .who { justify-content: center; }
+    body.kiosk .viewer video { transform: scaleX(-1); }
+    .overview { margin: 0 0 16px; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0 0 10px; }
+    .tile { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+    .tile .big { display: block; font-size: 22px; font-weight: 700; }
+    .tile .small { display: block; color: var(--muted); font-size: 14px; }
+    .overview ul { margin: 4px 0 0; padding-left: 18px; }
+    .overview .away { color: var(--bad); }
+    .kiosk-exit { position: fixed; bottom: 8px; right: 8px; z-index: 50; opacity: .55; font-size: 13px; padding: 6px 10px; }
+    .kiosk-exit.holding { opacity: 1; background: var(--warn-soft); }
 
     /* Buttons */
     .button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 54px; padding: 12px 20px;
@@ -123,6 +147,7 @@
     .button.big { width: 100%; min-height: 66px; font-size: 21px; }
     .button.wide { width: 100%; }
     .button svg { flex: none; width: 26px; height: 26px; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 6px 0 10px; }
     :focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
     .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
     .file-input:focus-visible + .button { outline: 3px solid var(--ring); outline-offset: 2px; }
@@ -190,7 +215,7 @@
     .end-time.invalid input { border-color: var(--bad); }
     .banner.good { background: var(--good-soft); color: var(--good); }
 
-    /* Duties: checking in, the coming duties, and the head attendant's placing */
+    /* Duties: checking in, the coming duties, and the head assistant's placing */
     .mode-switch { margin: 0 0 16px; }
     .hand { margin: 0 0 16px; padding: 16px; border: 2px solid var(--brand); border-radius: 14px; background: var(--surface); }
     .hand h2 { margin: 0 0 10px; font-size: 20px; }
@@ -206,6 +231,14 @@
     .duty-card .checked { margin: 0; color: var(--good); font-weight: 700; }
     .duties { margin: 0 0 12px; padding: 0; list-style: none; }
     .duties li { padding: 8px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+    .duties .avail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+    .duties .avail .button { min-height: 40px; padding: 6px 12px; font-size: 15px; width: auto; }
+    .duties .avail .state { font-weight: 700; }
+    .duties .avail .state.no { color: var(--bad); }
+    .duties .avail .state.yes { color: var(--good); }
+    .pick .answer { flex: 1 1 100%; font-size: 14px; font-weight: 700; }
+    .pick .answer.no { color: var(--bad); }
+    .pick .answer.yes { color: var(--good); }
     .duty-line { margin: 0 0 10px; font-size: 15px; overflow-wrap: anywhere; }
     .day-plan { margin: 0 0 12px; padding: 12px 14px; border: 2px solid var(--line); border-radius: 12px; background: var(--surface); }
     .day-plan > summary { cursor: pointer; font-size: 17px; font-weight: 700; }
@@ -220,6 +253,25 @@
     .pick select { flex: 0 1 190px; min-height: 48px; padding: 8px 10px; border: 2px solid var(--line); border-radius: 10px;
                    background: var(--surface); color: var(--ink); font: inherit; }
     .pick select.changed { border-color: var(--brand); }
+    /* Instant scans: the Recent scans list under the result card */
+    .recent-box { margin: 0 0 14px; }
+    ul.recent { list-style: none; margin: 4px 0 0; padding: 0; }
+    ul.recent li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; margin: 0 0 4px; border-radius: 10px; background: var(--surface); border-left: 6px solid var(--line); }
+    ul.recent li.recent-good { border-left-color: var(--good); }
+    ul.recent li.recent-warn { border-left-color: var(--warn); }
+    ul.recent li.recent-bad { border-left-color: var(--bad); background: var(--bad-soft); }
+    .recent-name { font-weight: 700; overflow-wrap: anywhere; }
+    .recent-state { white-space: nowrap; color: var(--muted); }
+    /* Notices (Notices.gs) and the form to post one */
+    .notices { margin: 0 0 16px; }
+    .notices label { display: block; margin: 10px 0 4px; font-weight: 700; }
+    .notices textarea, .notices select { display: block; width: 100%; box-sizing: border-box; min-height: 48px; padding: 8px 10px;
+      border: 2px solid var(--line); border-radius: 10px; font: inherit; background: var(--surface); color: inherit; }
+    .notices details { margin-top: 8px; }
+    .notices summary { cursor: pointer; font-weight: 700; }
+    /* The assistants team box (head administrators) */
+    section[aria-label="Assistants team"] .option { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; }
+    .pick select[disabled] { opacity: .5; }
     .linkbox { display: block; width: 100%; min-height: 84px; margin: 0 0 10px; padding: 10px 12px; border: 2px solid var(--line);
                border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; resize: none; }
 
@@ -431,22 +483,26 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     var GENERIC = 'Something went wrong, so this scan was not saved. Please scan the code again.';
     var OFFLINE = "Couldn't reach the management system, so this scan was not saved. Check the internet connection, then scan again.";
     var NOT_CONNECTED = "The management system answered, but not the way the live scanner expects, so this scan was not saved. " +
-      'Please tell the head attendant: the web app may need a new version (see the guide).';
+      'Please tell the head assistant: the web app may need a new version (see the guide).';
     var ID_CHARS = '23456789BCDFGHJKMNPQRSTVWXYZ';                    // the same letters as in Code.gs
     var APP_PATTERN = /^https:\/\/script\.google\.com\/(a\/[^\/\s]+\/)?macros\/s\/[A-Za-z0-9_-]+\/exec$/;
-    var TOKEN_PATTERN = /^[a-kmnp-z2-9]{24}$/;                          // an attendant's secret link code
+    var TOKEN_PATTERN = /^[a-kmnp-z2-9]{24}$/;                          // an assistant's secret link code
     var IN_GOOGLE = !!(window.google && google.script && google.script.run);
     var app = document.getElementById('app');
 
-    var D = null;                                // what the system sent: attendant, class, course, today's lists
-    var link = { app: '', token: '' };           // on GitHub Pages: the system's web app link and the attendant's code
+    var D = null;                                // what the system sent: assistant, class, course, today's lists
+    var link = { app: '', token: '' };           // on GitHub Pages: the system's web app link and the assistant's code
     var st = { busy: false, seq: 0, lastStatusAt: 0, statusBusy: false, shown: null, sound: loadSound(), open: {},
-               status: null, ending: {}, ended: {} };   // ending: Class ended forms being filled in; ended: sent from this page
+               status: null, ending: {}, ended: {},   // ending: Class ended forms being filled in; ended: sent from this page
+               // INSTANT SCANS: students still to be scanned (from today's list), scans sent in the background, the recent ones
+               roster: {}, done: {}, line: [], lineBusy: false, recent: [] };
     var ui = {};                                 // the parts of the page that change
     var cam = { on: false, starting: false, paused: false, stream: null, track: null, timer: 0,
                 lastText: '', lastSeen: 0, holdUntil: 0, torch: false, wake: null, resume: false };
     var photos = {};                             // student photos already fetched, by ID
-    var adminPhotos = {};                        // administrators' photos already fetched, by Administrator ID
+    var queue = [];                              // scans kept on this phone while it had no connection (see sendQueue)
+    var sentLater = [];                          // what the system said about the kept scans it has now received
+    var adminPhotos = {};                        // facilitators' photos already fetched, by Facilitator ID
     var detector = null;                         // the phone's own QR reader (Android Chrome), if it has one
     var audio = null;
 
@@ -521,19 +577,22 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     /** Asks the management system something: inside Google with google.script.run, on GitHub Pages through the web app link. */
     function call(api, args, onOk, onFail) {
       if (IN_GOOGLE) {
-        var name = { scan: 'scanCode', status: 'getClassStatus', photo: 'getStudentPhoto', adminPhoto: 'getAdministratorPhoto',
-          end: 'submitClassEnd', info: 'getScannerInfo', checkin: 'attendantCheckIn', duties: 'saveAttendantDuties',
-          message: 'messageFromAttendant' }[api];
+        var name = { scan: 'scanCode', status: 'getClassStatus', photo: 'getStudentPhoto', adminPhoto: 'getFacilitatorPhoto',
+          end: 'submitClassEnd', info: 'getScannerInfo', checkin: 'assistantCheckIn', duties: 'saveAssistantDuties',
+          message: 'messageFromAssistant', available: 'setDutyAvailability', team: 'setAssistantRole', notice: 'postNotice', dutyEmails: 'sendDutyEmailsNow' }[api];
         var runner = google.script.run.withSuccessHandler(onOk).withFailureHandler(onFail);
         runner[name].apply(runner, [D.token].concat(args));
         return;
       }
       var body = { api: api, attendant: link.token };
-      if (api === 'scan') { body.text = args[0]; body.how = args[1]; if (args[2]) body.retry = args[2]; }
+      if (api === 'scan') { body.text = args[0]; body.how = args[1]; if (args[2]) body.retry = args[2]; if (args[3]) body.queuedAt = args[3]; if (args[4]) body.light = true; }
       if (api === 'photo' || api === 'adminPhoto') body.id = args[0];
       if (api === 'end') { body.className = args[0]; body.ended = args[1]; body.answers = args[2]; }
-      if (api === 'duties') body.changes = args[0];
+      if (api === 'duties') { body.changes = args[0]; if (args[1]) body.later = true; }
       if (api === 'message') body.text = args[0];
+      if (api === 'available') { body.key = args[0]; body.available = args[1]; }
+      if (api === 'team') { body.name = args[0]; body.role = args[1]; body.active = args[2]; }
+      if (api === 'notice') { body.text = args[0]; body.forWho = args[1]; }
       if (!window.fetch) { onFail(new Error('This browser is too old.')); return; }
       var stopper = window.AbortController ? new AbortController() : null;
       var timer = stopper ? setTimeout(function () { stopper.abort(); }, 25000) : 0;   // give up after 25 seconds
@@ -758,8 +817,16 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       var el = document.getElementById('page-data');
       var text = el ? el.textContent || '' : '';
       if (!text || text.indexOf('<' + '?') !== -1) return null;
-      try { return JSON.parse(text); } catch (e) { return null; }
+      try { return takeWording(JSON.parse(text)); } catch (e) { return null; }
     }
+
+    // The Wording tab's changes (Wording.gs) arrive with the page's data; W('key', 'the system words') gives the words to show.
+    var WORDING = {};
+    function takeWording(data) {
+      if (data && data.wording && typeof data.wording === 'object') WORDING = data.wording;
+      return data;
+    }
+    function W(key, fallback) { var w = WORDING[key]; return typeof w === 'string' ? w : fallback; }
 
     function readAddress() {
       var out = {};
@@ -774,24 +841,24 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     function start() {
       var embedded = readEmbeddedData();
       if (embedded && embedded.token) { D = embedded; build(); return; }
-      if (IN_GOOGLE) { fatal('This page needs an attendant link', 'Open it from the scanning link the head attendant sent you.'); return; }
+      if (IN_GOOGLE) { fatal('This page needs an assistant link', 'Open it from the scanning link the head assistant sent you.'); return; }
       var address = readAddress();
       link.app = address.app || '';
-      link.token = address.attendant || address.helper || '';   // helper= is the older name
+      link.token = address.attendant || address.helper || '';   // the link's code: attendant= (helper= is the oldest name)
       if (!APP_PATTERN.test(link.app) || !TOKEN_PATTERN.test(link.token)) {
         fatal("This live scanner link isn't complete",
-          'Open your scanning link from the head attendant, then tap "Open the live scanner" on that page.');
+          'Open your scanning link from the head assistant, then tap "Open the live scanner" on that page.');
         return;
       }
       show(letterhead(null), h('main', { class: 'wrap' }, h('p', { class: 'loading' }, spinner(), 'Opening the live scanner\u2026')));
       call('info', [], function (d) {
-        if (d && d.ok && d.token) { D = d; build(); return; }
-        if (d && d.blocked) fatal("This scanning link isn't active", 'Ask the head attendant for a new link.');
+        if (d && d.ok && d.token) { D = takeWording(d); build(); return; }
+        if (d && d.blocked) fatal("This scanning link isn't active", 'Ask the head assistant for a new link.');
         else fatal("The scanner couldn't open", 'Please reload this page in a minute.', true);
       }, function (err) {
         if (err && err.notConnected) {
           fatal("The live scanner isn't connected yet", 'The management system answered, but not the way the live scanner expects. ' +
-            'Please tell the head attendant: the web app needs a new version (see the guide).', true);
+            'Please tell the head assistant: the web app needs a new version (see the guide).', true);
         } else {
           fatal("Couldn't reach the management system", 'Check the internet connection, then reload this page.', true);
         }
@@ -809,31 +876,36 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     //  Building the page
     // ------------------------------------------------------------------
 
-    /** Whether this page can scan: the head attendant always; an attendant on a class day only when on duty (any day can try the camera). */
+    /** Whether this page can scan: the head assistant always; an assistant on a class day only when on duty (any day can try the camera). */
     function canScan() {
-      return D.allClasses || !!D.attendantClass || !D.isClassDay;
+      return D.allClasses || !!D.assistantClass || !D.isClassDay;
     }
 
     function build() {
       var scanning = canScan();
       var live = D.ready && scanning && (IN_GOOGLE ? cameraAllowedHere() : cameraPossible());
-      document.title = D.attendantClass && !D.allClasses ? 'Scan \u2013 ' + D.attendantClass : 'Scan';
+      document.title = D.assistantClass && !D.allClasses ? 'Scan \u2013 ' + D.assistantClass : 'Scan';
       ui.banners = h('div');
       ui.duty = h('div');
       ui.next = h('div');   // the coming duties: below the lists while scanning, so the camera stays near the top
       ui.result = h('section', { class: 'result', 'aria-live': 'polite', 'aria-atomic': 'true' });
+      ui.queue = h('div', { class: 'queue-box' });   // scans kept on this phone, waiting for the connection
+      ui.recent = h('div', { class: 'recent-box', 'aria-live': 'polite' });   // the last scans and their final results (instant scans)
       ui.status = h('section', { 'aria-label': "Today's lists" });
-      ui.plan = D.allClasses && D.duty && D.duty.plan ? h('section', { 'aria-label': 'Attendants on duty' }) : null;
+      ui.plan = D.allClasses && D.duty && D.duty.plan ? h('section', { 'aria-label': 'Assistants on duty' }) : null;
       show(
         letterhead(D),
         h('main', { class: 'wrap' },
-          h('h1', { text: D.allClasses ? 'All classes' : D.attendantClass || (D.isClassDay ? 'Not on duty today' : 'Your duties') }),
-          h('p', { class: 'meta' }, 'Scanning as ' + D.attendantName + (D.head ? ' (head attendant)' : '') + (D.attendantId ? ' \u00b7 ' + D.attendantId : ''), h('br'), D.dateText,
+          h('h1', { text: D.allClasses ? 'All classes' : D.assistantClass || (D.isClassDay && D.duty && D.duty.where ? D.duty.where : (D.isClassDay ? 'Not on duty today' : 'Your duties')) }),
+          h('p', { class: 'meta' }, 'Scanning as ' + D.assistantName + (D.isAdmin ? ' (head administrator)' : D.head ? ' (head assistant)' : '') + (D.assistantId ? ' \u00b7 ' + D.assistantId : ''), h('br'), D.dateText,
             D.lateText ? [h('br'), D.lateText] : null, D.scanText ? [h('br'), D.scanText] : null),
           ui.banners,
+          noticesSection(D.notices, D.canPostNotice, function (text, who, done) {
+            call('notice', [text, who], done, function () { done({ ok: false, message: "Couldn't reach the management system, so the notice was not posted." }); });
+          }),
           ui.duty,
           buildModeSwitch(),
-          D.ready && scanning && st.mode !== 'handin' ? [ui.result, buildControls(live)] : null,
+          D.ready && scanning && st.mode !== 'handin' ? [ui.queue, ui.result, ui.recent, buildControls(live)] : null,
           st.mode === 'handin' ? buildHandIn() : null,
           ui.status,
           ui.next,
@@ -846,29 +918,34 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       if (st.mode === 'handin') renderHand();
       renderStatus(D.status);
       if (ui.plan) renderPlan(D.duty.plan);
+      loadQueue();   // scans kept on this phone by an earlier visit
+      renderQueue();
+      if (queue.length) scheduleQueue(1500);
       if (st.started) return;   // the listeners and the timer are set once, even when the page is built again
       st.started = true;
       document.addEventListener('pointerdown', prepareSound, { passive: true });
       document.addEventListener('visibilitychange', onVisibility);
+      window.addEventListener('online', function () { if (queue.length) scheduleQueue(500); });
       setInterval(function () {
         if (!document.hidden && !st.busy && !endFormOpen() && Date.now() - st.lastStatusAt > 55000) refreshStatus(false);
+        if (queue.length && !st.sending && !st.queueTimer) scheduleQueue(100);
       }, 15000);
     }
 
-    /** Opens the page again with the latest from the system (for example when the head attendant changed this attendant's duty). */
+    /** Opens the page again with the latest from the system (for example when the head assistant changed this assistant's duty). */
     function reopen() {
       if (st.reopening) return;
       st.reopening = true;
       call('info', [], function (d) {
         st.reopening = false;
-        if (d && d.ok && d.token) { stopCamera(); D = d; st.ending = {}; build(); return; }
-        if (d && d.blocked) fatal("This scanning link isn't active", 'Ask the head attendant for a new link.');
+        if (d && d.ok && d.token) { stopCamera(); D = takeWording(d); st.ending = {}; build(); return; }
+        if (d && d.blocked) fatal("This scanning link isn't active", 'Ask the head assistant for a new link.');
       }, function () { st.reopening = false; });
     }
 
     function renderBanners() {
       ui.banners.textContent = '';
-      if (!D.ready) add(ui.banners, banner('bad', "The system isn't set up yet, so codes can't be scanned. Please tell the head attendant."));
+      if (!D.ready) add(ui.banners, banner('bad', "The system isn't set up yet, so codes can't be scanned. Please tell the head assistant."));
       if (D.testing) add(ui.banners, banner('warn', 'Testing mode: the system is treating today as ' + D.dateText + '.'));
       if (D.ready && !D.isClassDay) {
         add(ui.banners, banner('warn', "Today isn't a class day, so nothing is recorded. You can still scan a code to check that " +
@@ -881,8 +958,8 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     }
 
     // ------------------------------------------------------------------
-    //  Duties: checking in, the coming duties, and (for the head attendant)
-    //  putting attendants on duty and the attendant sign-up link
+    //  Duties: checking in, the coming duties, and (for the head assistant)
+    //  putting assistants on duty and the assistant sign-up link
     // ------------------------------------------------------------------
 
     /** The top of the page: today's duty with Check in, or "not on duty today", and the coming duties. */
@@ -892,26 +969,36 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       var d = D.duty;
       if (!d || !D.ready) return;
       var next = (d.upcoming || []).filter(function (x) { return !x.today; }).slice(0, 4);
-      var nextList = next.length ? [h('p', { class: 'list-title', text: 'Your next duties' }),
+      var nextList = next.length ? [h('p', { class: 'list-title', text: W('scan.nextDuties', 'Your next duties') }),
+        h('p', { class: 'help', text: "Tap I'll be there for each one, or I can't make it as soon as you know, so the head assistant can put someone else on duty." }),
         h('ul', { class: 'duties' }, next.map(function (x) {
-          return h('li', { text: x.className + ' \u00b7 ' + x.dateText + (x.start ? ' \u00b7 starts ' + x.start : '') });
+          return h('li', null, x.className + ' \u00b7 ' + x.dateText + (x.start ? ' \u00b7 starts ' + x.start : '') + (x.role ? ' \u00b7 ' + x.role : ''), availabilityRow(x));
         }))] : null;
+      if (D.isAdmin) {   // a head administrator with the head assistant's tools: they check in on their own page
+        add(ui.duty, h('section', { class: 'duty-card', 'aria-label': 'Head assistant tools' },
+          h('h2', { text: W('scan.adminTools', 'Head assistant tools') }),
+          h('p', { class: 'help', text: 'As head administrator you have everything the head assistant has: scanning in every class, ' +
+            "today's lists, putting assistants on duty, and the assistants team. You check in on your own facilitator page." })));
+        return;
+      }
       if (D.isClassDay && (d.onDuty || d.head)) {
         var today = (d.upcoming || []).filter(function (x) { return x.today; })[0];
         var card = h('section', { class: 'duty-card', 'aria-label': 'Your duty today' },
-          h('h2', { text: (d.head ? 'Head attendant today' : 'On duty today') + (today && today.start ? ' \u00b7 starts ' + today.start : '') }));
+          h('h2', { text: (d.head ? 'Head assistant today' : 'On duty today') + (today && today.start ? ' \u00b7 starts ' + today.start : '') +
+            (!d.head && d.role ? ' \u00b7 ' + d.role : '') }));
+        if (!d.head && d.where && !d.canScan) add(card, h('p', { class: 'help', text: 'Your duty today: ' + (d.role ? d.role + ', ' : '') + d.where + '. Scanning is not part of this duty.' }));
         if (d.checkedIn) {
           add(card, h('p', { class: 'checked', text: '\u2713 You checked in at ' + d.checkedIn + '.' }));
         } else {
           add(card, h('p', { text: d.head ? 'Tap Check in when you arrive.' : 'Tap Check in when you arrive. If you forget, your first scan checks you in.' }));
-          ui.checkIn = h('button', { type: 'button', class: 'button primary wide', text: 'Check in', onclick: checkIn });
+          ui.checkIn = h('button', { type: 'button', class: 'button primary wide', text: W('scan.checkIn', 'Check in'), onclick: checkIn });
           add(card, ui.checkIn);
         }
         ui.dutyMessage = h('div', { 'aria-live': 'polite' });
         add(card, ui.dutyMessage);
         var others = d.head ? (d.heads || []).filter(function (x) { return !x.me; }) : [];
         if (others.length) {
-          add(card, h('p', { class: 'help', text: 'Other head attendants: ' + others.map(function (x) {
+          add(card, h('p', { class: 'help', text: 'Other head assistants: ' + others.map(function (x) {
             return x.name + (x.time ? ' (checked in ' + x.time + ')' : ' (not checked in yet)');
           }).join(', ') + '.' }));
         }
@@ -921,11 +1008,50 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       }
       if (d.head) return;
       if (D.isClassDay) {
-        add(ui.duty, banner('warn', "You aren't on duty today, so you can't scan. If you should be, tell the head attendant. " +
+        add(ui.duty, banner('warn', "You aren't on duty today, so you can't scan. If you should be, tell the head assistant. " +
           'This page changes by itself when you are put on duty.'));
       }
       add(ui.duty, nextList || h('p', { class: 'muted', text: "You aren't on duty on the coming class days yet. " +
-        'When the head attendant puts you on duty, you get an email with your class.' }));
+        'When the head assistant puts you on duty, you get an email with your class.' }));
+    }
+
+    /** Under a coming duty: what the assistant said, and the buttons to say it (or change it). */
+    function availabilityRow(x) {
+      var row = h('div', { class: 'avail' });
+      var state = x.available === 'Yes' ? h('span', { class: 'state yes', text: "\u2713 You'll be there" })
+        : x.available === 'No' ? h('span', { class: 'state no', text: "\u2717 You can't make it" }) : null;
+      var yes = h('button', { type: 'button', class: 'button ' + (x.available === 'Yes' ? 'secondary' : 'primary'), text: "I'll be there",
+        onclick: function () { answer(x, true, row); } });
+      var no = h('button', { type: 'button', class: 'button secondary', text: "I can't make it", onclick: function () { answer(x, false, row); } });
+      if (state) add(row, state);
+      if (x.available !== 'Yes') add(row, yes);
+      if (x.available !== 'No') add(row, no);
+      return row;
+    }
+
+    function answer(x, available, row) {
+      if (st.answering) return;
+      st.answering = true;
+      row.textContent = '';
+      add(row, [spinner(), 'Saving\u2026']);
+      call('available', [x.key, available], function (r) {
+        st.answering = false;
+        if (r && r.blocked) { fatal("This scanning link isn't active", 'Ask the head assistant for a new link.'); return; }
+        if (r && r.ok) {
+          if (r.info) D.duty = r.info;
+          renderDuty();
+          if (ui.next.firstChild) ui.next.insertBefore(banner(available ? 'good' : 'warn', r.message), ui.next.firstChild.nextSibling);
+          return;
+        }
+        if (r && r.info) D.duty = r.info;
+        renderDuty();
+        if (ui.next.firstChild) ui.next.insertBefore(banner('bad', (r && r.message) || 'Something went wrong, so your answer was not saved. Please try again.'), ui.next.firstChild.nextSibling);
+      }, function (err) {
+        st.answering = false;
+        renderDuty();
+        if (ui.next.firstChild) ui.next.insertBefore(banner('bad', err && err.notConnected ? NOT_CONNECTED.replace('this scan was not saved', 'your answer was not saved')
+          : "Couldn't reach the management system, so your answer was not saved. Check the internet connection, then try again."), ui.next.firstChild.nextSibling);
+      });
     }
 
     function checkIn() {
@@ -940,7 +1066,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       ui.checkIn.textContent = '';
       add(ui.checkIn, [spinner(), 'Checking in\u2026']);
       call('checkin', [], function (r) {
-        if (r && r.blocked) { fatal("This scanning link isn't active", 'Ask the head attendant for a new link.'); return; }
+        if (r && r.blocked) { fatal("This scanning link isn't active", 'Ask the head assistant for a new link.'); return; }
         if (r && r.ok && r.checkedIn) { D.duty.checkedIn = r.checkedIn; renderDuty(); refreshStatus(false); return; }   // the class card shows it too
         again('bad', (r && r.message) || 'Something went wrong, so you were not checked in. Please tap Check in again.');
         if (r && /on duty/.test(r.message || '')) reopen();   // the duty was changed meanwhile
@@ -950,74 +1076,290 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       });
     }
 
-    /** What a refresh says about this attendant: a changed duty opens the page again; a check-in (by their first scan) shows. */
+    /** What a refresh says about this assistant: a changed duty opens the page again; a check-in (by their first scan) shows. */
     function noteMe(me) {
-      if ((me.className || '') !== (D.attendantClass || '')) { reopen(); return; }
+      if ((me.className || '') !== (D.assistantClass || '')) { reopen(); return; }
       if (D.duty && (me.checkedIn || '') !== (D.duty.checkedIn || '')) {
         D.duty.checkedIn = me.checkedIn || '';
         renderDuty();
       }
     }
 
-    /** The head attendant's part: who is on duty in which class on the coming class days, and the attendant sign-up link. */
+    /**
+     * The head's planning box (head assistants and head administrators). For each class day and each assistant: first
+     * the duty role, then where (the role decides: the Exam by itself for an invigilator, a class for a class assistant,
+     * a place for a traffic coordinator, nothing for the whole venue). Still needed, Same as the week before, Fill fairly.
+     */
     function renderPlan(plan) {
       ui.plan.textContent = '';
-      st.planSelects = [];
-      add(ui.plan, h('h2', { text: 'Attendants on duty' }));
-      add(ui.plan, h('p', { class: 'help', text: 'Choose a class for each attendant on each class day, then tap Save duties. Each attendant ' +
-        'is emailed their class and their own scanning link, and their link scans only that class on that day. A class can have more than one attendant.' }));
+      st.planRows = [];
+      add(ui.plan, h('h2', { text: W('scan.duties.title', 'Assistants on duty') }));
+      var info = {};
+      (plan.roleInfo || []).forEach(function (x) { info[x.name.toLowerCase()] = x; });
+      var roles = plan.roles || [];
+      var NOROLE = '*';
+      var teaching = plan.teaching || plan.classes;
+      var venue = plan.venue || 'Whole venue';
+      add(ui.plan, h('p', { class: 'help', text: 'For each assistant on each class day, choose their duty role first, then where. ' +
+        'An invigilator goes to the Exam by itself; a class assistant needs a class; a traffic coordinator a place. ' +
+        'Then tap Save duties: each assistant is emailed their duty and their own link.' }));
       if (!plan.names.length) {
-        add(ui.plan, h('p', { class: 'muted', text: 'No attendants have signed up yet. Share the attendant sign-up link below with them.' }));
+        add(ui.plan, h('p', { class: 'muted', text: 'No assistants have signed up yet. Share the assistant sign-up link below with them.' }));
       } else {
         plan.days.forEach(function (day, d) {
-          var selects = [];
+          var rows = [];
+          var answers = day.answers || {};
           var onDuty = plan.names.filter(function (n) { return day.duties[n.toLowerCase()]; }).length;
-          var box = h('details', { class: 'day-plan', open: d === 0 ? true : null },
-            h('summary', { text: day.dateText + ' \u00b7 ' + onDuty + ' on duty' }));
+          var away = plan.names.filter(function (n) { return day.duties[n.toLowerCase()] && answers[n.toLowerCase()] === 'No'; }).length;
+          var missing = (day.gaps || []).reduce(function (s, g) { return s + (g.needed - g.have); }, 0);
+          var box = h('details', { class: 'day-plan', open: d === 0 || away ? true : null },
+            h('summary', { text: day.dateText + ' \u00b7 ' + onDuty + ' on duty' + (away ? " \u00b7 " + away + " can't make it" : '') +
+              (missing ? ' \u00b7 ' + missing + ' still needed' : '') }));
+          var gapBox = h('div', { class: 'gaps', 'aria-live': 'polite' });
+          add(box, gapBox);
           plan.names.forEach(function (name, i) {
             var id = 'duty-' + d + '-' + i;
-            var select = h('select', { id: id });
-            add(select, h('option', { value: '', text: 'Not on duty' }));
-            plan.classes.forEach(function (c) { add(select, h('option', { value: c, text: c })); });
-            select.value = day.duties[name.toLowerCase()] || '';
-            select.dataset.key = day.key;
-            select.dataset.name = name;
-            select.dataset.was = select.value;
-            select.addEventListener('change', function () { select.className = select.value === select.dataset.was ? '' : 'changed'; });
-            selects.push(select);
-            st.planSelects.push(select);
-            add(box, h('div', { class: 'pick' }, h('label', { for: id, text: name }), select));
+            var k = name.toLowerCase();
+            var role = h('select', { id: id });
+            add(role, h('option', { value: '', text: 'Not on duty' }));
+            roles.forEach(function (r) { add(role, h('option', { value: r, text: r })); });
+            add(role, h('option', { value: NOROLE, text: 'No duty role (choose a class)' }));
+            var where = h('select', { id: id + '-where', 'aria-label': 'Where for ' + name });
+            var row = { name: name, key: day.key, role: role, where: where };
+            var hadCls = day.duties[k] || '';
+            var hadRole = (day.roles || {})[k] || '';
+            var hadPlace = (day.places || {})[k] || '';
+            if (hadRole && roles.indexOf(hadRole) === -1) add(role, h('option', { value: hadRole, text: hadRole }));
+            role.value = hadCls ? (hadRole || NOROLE) : '';
+            fillWhere(row, hadCls === venue ? (hadPlace || venue) : hadCls);
+            row.was = role.value + '|' + where.value;
+            var mark = function () {
+              var changed = role.value + '|' + where.value !== row.was;
+              role.className = changed ? 'changed' : '';
+              where.className = changed ? 'changed' : '';
+              showGaps();
+            };
+            role.addEventListener('change', function () { fillWhere(row, ''); mark(); });
+            where.addEventListener('change', mark);
+            row.mark = mark;
+            rows.push(row);
+            st.planRows.push(row);
+            var said = hadCls ? answers[k] : '';
+            var usual = (plan.usual || {})[k];
+            add(box, h('div', { class: 'pick' }, h('label', { for: id, text: name }), role, where,
+              said === 'No' ? h('span', { class: 'answer no', text: "\u2717 Can't make it \u2013 put someone else on duty" })
+                : said === 'Yes' ? h('span', { class: 'answer yes', text: '\u2713 Confirmed' }) : null,
+              usual && usual.role ? h('span', { class: 'muted', text: 'Usually: ' + usual.role + (usual.where ? ', ' + usual.where : '') }) : null));
           });
+          function showGaps() {
+            gapBox.textContent = '';
+            var list = gapsNow(rows, answers);
+            if (list.length) {
+              add(gapBox, h('p', { class: 'help', text: 'Still needed: ' + list.map(function (g) {
+                return g.role + ' \u2013 ' + g.where + ' (' + g.have + ' of ' + g.needed + ')';
+              }).join('; ') + '.' }));
+            }
+          }
+          showGaps();
+          var buttons = h('p', { class: 'button-row' });
           if (plan.names.some(function (n) { return day.prev[n.toLowerCase()]; })) {
-            add(box, h('button', { type: 'button', class: 'linkish', text: 'Same as the week before', onclick: function () {
-              selects.forEach(function (s) {
-                s.value = day.prev[s.dataset.name.toLowerCase()] || '';
-                s.className = s.value === s.dataset.was ? '' : 'changed';
+            add(buttons, h('button', { type: 'button', class: 'linkish', text: 'Same as the week before', onclick: function () {
+              rows.forEach(function (r) {
+                var k2 = r.name.toLowerCase();
+                var c = day.prev[k2] || '';
+                var ro = (day.prevRoles || {})[k2] || '';
+                var pl = (day.prevPlaces || {})[k2] || '';
+                if (ro && !Array.prototype.some.call(r.role.options, function (op) { return op.value === ro; })) add(r.role, h('option', { value: ro, text: ro }));
+                r.role.value = c ? (ro || NOROLE) : '';
+                fillWhere(r, c === venue ? (pl || venue) : c);
+                r.mark();
               });
               planSay('warn', 'Filled in from the week before for ' + day.dateText + '. Check it, then tap Save duties.');
             } }));
           }
+          add(buttons, h('button', { type: 'button', class: 'linkish', text: 'Fill fairly', onclick: function () {
+            var n = fillFairly(rows, answers);
+            planSay('warn', n ? 'Filled ' + n + ' duty(ies) for ' + day.dateText + ', fairly: usual roles first, then whoever has had fewest duties lately, leaving out anyone who can\'t make it. Check it, then tap Save duties.'
+              : 'Nothing to fill for ' + day.dateText + ': every role that needs people has them, or nobody free is left.');
+          } }));
+          add(box, buttons);
           add(ui.plan, box);
         });
         ui.planStatus = h('div', { 'aria-live': 'polite' });
-        ui.planSave = h('button', { type: 'button', class: 'button primary wide', text: 'Save duties', onclick: savePlan });
+        ui.planSave = h('button', { type: 'button', class: 'button primary wide', text: W('scan.duties.save', 'Save duties'), onclick: savePlan });
         add(ui.plan, [ui.planStatus, ui.planSave]);
       }
-      var share = h('section', { 'aria-label': 'Attendant sign-up link' }, h('h2', { text: 'New attendants' }));
+
+      /** The second choice, from the role: the Exam alone, the classes, the role's places, or the whole venue. */
+      function fillWhere(row, value) {
+        var w = row.where;
+        var r = row.role.value;
+        w.textContent = '';
+        var x = r && r !== NOROLE ? info[r.toLowerCase()] : null;
+        var works = !r ? '' : !x ? 'A class' : x.works;
+        var opts = [];
+        if (works === 'The exam') opts = [EXAM_NAME()];
+        else if (works === 'A place') opts = x.places.length ? x.places : [venue];
+        else if (works === 'Whole venue') opts = [venue];
+        else if (works === 'A class') opts = r === NOROLE || !x ? plan.classes : teaching;
+        if (!opts.length) { add(w, h('option', { value: '', text: '\u2013' })); w.disabled = true; w.value = ''; return; }
+        if (works === 'A class' && opts.length > 1) add(w, h('option', { value: '', text: 'Choose the class' }));
+        opts.forEach(function (o) { add(w, h('option', { value: o, text: o })); });
+        if (value && opts.indexOf(value) === -1 && works === 'A place') add(w, h('option', { value: value, text: value }));
+        w.value = value && Array.prototype.some.call(w.options, function (op) { return op.value === value; }) ? value : (opts.length === 1 || works !== 'A class' ? opts[0] : '');
+        w.disabled = opts.length === 1;
+      }
+      function EXAM_NAME() { return plan.classes[plan.classes.length - 1]; }
+
+      /** What is still missing for a day, from the choices on the page now. */
+      function gapsNow(rows, answers) {
+        var out = [];
+        (plan.roleInfo || []).filter(function (x) { return x.needed > 0; }).forEach(function (x) {
+          var mine = rows.filter(function (r) { return r.role.value === x.name && answers[r.name.toLowerCase()] !== 'No'; });
+          if (x.works === 'A class') {
+            teaching.forEach(function (c) {
+              var have = mine.filter(function (r) { return r.where.value === c; }).length;
+              if (have < x.needed) out.push({ role: x.name, where: c, have: have, needed: x.needed });
+            });
+          } else if (mine.length < x.needed) {
+            out.push({ role: x.name, where: x.works === 'The exam' ? EXAM_NAME() : x.works === 'A place' ? (x.places.join(', ') || venue) : venue, have: mine.length, needed: x.needed });
+          }
+        });
+        return out;
+      }
+
+      /**
+       * Fill fairly: for each role that still needs people, the free assistants (not on duty that day, and not "can't
+       * make it"): first those whose usual role it is, then whoever has had the fewest duties lately. Returns how many it filled.
+       */
+      function fillFairly(rows, answers) {
+        var filled = 0;
+        var counts = plan.counts || {};
+        var usual = plan.usual || {};
+        var free = function () {
+          return rows.filter(function (r) { return !r.role.value && answers[r.name.toLowerCase()] !== 'No'; });
+        };
+        gapsNow(rows, answers).forEach(function (g) {
+          for (var n = g.have; n < g.needed; n++) {
+            var people = free();
+            if (!people.length) return;
+            people.sort(function (a, b) {
+              var ua = usual[a.name.toLowerCase()] || {}, ub = usual[b.name.toLowerCase()] || {};
+              var sa = (ua.role === g.role ? 0 : 2) + (ua.where && ua.where === g.where ? 0 : 1);
+              var sb = (ub.role === g.role ? 0 : 2) + (ub.where && ub.where === g.where ? 0 : 1);
+              return sa - sb || (counts[a.name.toLowerCase()] || 0) - (counts[b.name.toLowerCase()] || 0) || a.name.localeCompare(b.name);
+            });
+            var p = people[0];
+            p.role.value = g.role;
+            var x = info[g.role.toLowerCase()];
+            var u = usual[p.name.toLowerCase()] || {};
+            fillWhere(p, x && x.works === 'A place' ? (x.places.indexOf(u.where) !== -1 ? u.where : leastUsedPlace(rows, x)) : g.where);
+            counts[p.name.toLowerCase()] = (counts[p.name.toLowerCase()] || 0) + 1;
+            p.mark();
+            filled++;
+          }
+        });
+        return filled;
+      }
+      function leastUsedPlace(rows, x) {
+        var best = x.places[0] || venue, most = Infinity;
+        x.places.forEach(function (pl) {
+          var used = rows.filter(function (r) { return r.role.value === x.name && r.where.value === pl; }).length;
+          if (used < most) { most = used; best = pl; }
+        });
+        return best;
+      }
+
+      if (D.team) add(ui.plan, buildTeam(D.team));
+      var share = h('section', { 'aria-label': 'Assistant sign-up link' }, h('h2', { text: W('scan.newAssistants', 'New assistants') }));
+
       if (plan.signupLink) {
-        var box2 = h('textarea', { class: 'linkbox', readonly: true, rows: '3', 'aria-label': 'The attendant sign-up link' });
+        var box2 = h('textarea', { class: 'linkbox', readonly: true, rows: '3', 'aria-label': 'The assistant sign-up link' });
         box2.value = plan.signupLink;
         box2.addEventListener('focus', function () { box2.select(); });
         box2.addEventListener('click', function () { box2.select(); });
         var copied = h('span', { class: 'muted', 'aria-live': 'polite' });
-        add(share, [h('p', { text: 'Share this link with new attendants. They sign up once, then they appear above, ready to be put on duty.' }),
-          box2, h('p', null, h('button', { type: 'button', class: 'button secondary', text: 'Copy link',
-            onclick: function () { copyText(box2, copied); } }), ' ', copied)]);
+        var course = (D && D.courseName) || '';
+        var message = 'Sign up as an assistant for ' + (course ? (/^the\s/i.test(course) ? course : 'the ' + course) : 'the course') + ': ' + plan.signupLink +
+          '\nSign up once with your name, email and phone, and you are emailed your own scanning link. The head assistant then puts you on duty.';
+        add(share, [h('p', { text: 'Share this link with new assistants. They sign up once, then they appear above, ready to be put on duty.' }),
+          box2, h('p', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', text: 'Copy link',
+            onclick: function () { copyText(box2, copied); } }),
+            h('a', { class: 'button secondary', href: 'https://wa.me/?text=' + encodeURIComponent(message), target: '_blank', rel: 'noopener', text: 'Share on WhatsApp' }),
+            copied)]);
       } else {
-        add(share, h('p', { class: 'muted', text: 'There is no attendant sign-up link yet. Ask the System Manager to make one ' +
-          '(Academy > Attendants > Make a new attendant sign-up link).' }));
+        add(share, h('p', { class: 'muted', text: 'There is no assistant sign-up link yet. Ask the System Manager to make one ' +
+          '(Academy > Assistants > Make a new assistant sign-up link).' }));
       }
       add(ui.plan, share);
+    }
+
+    /**
+     * For a head administrator using the head tools: the assistants, each with Role (Assistant or Head assistant) and Active.
+     * A change is saved at once (setAssistantRole in Duties2.gs); a new head assistant is emailed the head version of their link.
+     */
+    function buildTeam(team) {
+      var box = h('section', { 'aria-label': 'Assistants team' }, h('h2', { text: W('scan.team.title', 'Assistants team') }),
+        h('p', { class: 'help', text: 'As head administrator you choose who leads the assistants. Change a role or Active, and it is saved at once.' }));
+      var say = h('div', { 'aria-live': 'polite' });
+      add(box, say);
+      team.forEach(function (m, i) {
+        var id = 'team-' + i;
+        var role = h('select', { id: id });
+        ['Assistant', 'Head assistant'].forEach(function (r) { add(role, h('option', { value: r, text: r })); });
+        role.value = m.role;
+        var active = h('input', { type: 'checkbox', id: id + '-on', 'aria-label': 'Active: ' + m.name });
+        active.checked = !!m.active;
+        var save = function () {
+          role.disabled = true; active.disabled = true;
+          call('team', [m.name, role.value, active.checked], function (r) {
+            role.disabled = false; active.disabled = false;
+            say.textContent = '';
+            add(say, banner(r && r.ok ? 'good' : 'bad', (r && r.message) || 'Something went wrong, so the change was not saved. Please try again.'));
+            if (r && r.team) D.team = r.team;
+          }, function () {
+            role.disabled = false; active.disabled = false;
+            say.textContent = '';
+            add(say, banner('bad', "Couldn't reach the management system, so the change was not saved. Please try again."));
+          });
+        };
+        role.addEventListener('change', save);
+        active.addEventListener('change', save);
+        add(box, h('div', { class: 'pick' }, h('label', { for: id, text: m.name }), role,
+          h('label', { class: 'option', for: id + '-on' }, active, h('span', { text: 'Active' }))));
+      });
+      return box;
+    }
+
+    /** Notices (Notices.gs): the newest few for this page; a head can post one. post(text, forWho, done) sends it. */
+    function noticesSection(list, canPost, post) {
+      if (!(list && list.length) && !canPost) return null;
+      var box = h('section', { class: 'notices', 'aria-label': 'Notices' }, h('h2', { text: W('notices.title', 'Notices') }));
+      (list || []).forEach(function (n) {
+        add(box, h('div', { class: 'banner good' }, h('span', { text: n.text }),
+          h('br'), h('small', { text: [n.from, n.when].filter(Boolean).join(' \u00b7 ') })));
+      });
+      if (canPost) {
+        var text = h('textarea', { id: 'notice-text', rows: '3', maxlength: '500', 'aria-label': 'A new notice' });
+        var who = h('select', { id: 'notice-for', 'aria-label': 'Who sees it' });
+        ['Everyone', 'Students', 'Staff', 'Assistants', 'Facilitators'].forEach(function (x) { add(who, h('option', { value: x, text: x })); });
+        var say = h('div', { 'aria-live': 'polite' });
+        var btn = h('button', { type: 'button', class: 'button secondary', text: W('notices.post', 'Post notice') });
+        btn.addEventListener('click', function () {
+          if (!text.value.trim()) { say.textContent = ''; add(say, banner('warn', 'Please type the notice.')); return; }
+          btn.disabled = true;
+          post(text.value, who.value, function (r) {
+            btn.disabled = false;
+            say.textContent = '';
+            add(say, banner(r && r.ok ? 'good' : 'bad', (r && r.message) || 'Something went wrong, so the notice was not posted.'));
+            if (r && r.ok) text.value = '';
+          });
+        });
+        add(box, h('details', null, h('summary', { text: 'Post a notice' }),
+          h('label', { for: 'notice-text', text: 'Notice' }), text, h('label', { for: 'notice-for', text: 'Who sees it' }), who,
+          h('p', null, btn), say));
+      }
+      return box;
     }
 
     function planSay(kind, text) {
@@ -1028,20 +1370,31 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
 
     function savePlan() {
       if (st.planBusy) return;
-      var changes = st.planSelects.filter(function (s) { return s.value !== s.dataset.was; })
-        .map(function (s) { return { key: s.dataset.key, name: s.dataset.name, className: s.value }; });
+      var changes = (st.planRows || []).filter(function (r) { return r.role.value + '|' + r.where.value !== r.was; }).map(function (r) {
+        var role = r.role.value === '*' ? '' : r.role.value;
+        var off = !r.role.value;
+        return { key: r.key, name: r.name, role: off ? '' : role, className: off ? '' : r.where.value, where: off ? '' : r.where.value };
+      });
+      var unfinished = (st.planRows || []).filter(function (r) { return r.role.value && !r.where.value; });
+      if (unfinished.length) { planSay('bad', 'Choose where for ' + unfinished.map(function (r) { return r.name; }).join(', ') + ', then tap Save duties.'); return; }
       if (!changes.length) { planSay('warn', 'Nothing to save: no duty was changed.'); return; }
       st.planBusy = true;
       ui.planSave.disabled = true;
       ui.planSave.textContent = '';
       add(ui.planSave, [spinner(), 'Saving\u2026']);
       var again = function () { ui.planSave.disabled = false; ui.planSave.textContent = 'Save duties'; };
-      call('duties', [changes], function (r) {
+      call('duties', [changes, true], function (r) {
         st.planBusy = false;
         if (r && r.blocked) { fatal("This scanning link isn't active", 'Ask the System Manager for a new link.'); return; }
         if (r && r.plan) { D.duty.plan = r.plan; renderPlan(r.plan); } else again();
         planSay(r && r.ok ? 'good' : 'bad', (r && r.message) || 'Something went wrong, so the duties were not saved. Please tap Save duties again.');
         if (r && r.ok) refreshStatus(false);   // today's cards show who is on duty
+        if (r && r.ok && r.emailsNext) {   // saved: now the emails, in a second call, so "Saved" showed at once
+          var savedText = r.message;
+          planSay('good', savedText + ' ' + W('scan.duties.emailing', 'Sending the emails\u2026'));
+          call('dutyEmails', [], function (e) { planSay('good', savedText + ' ' + ((e && e.message) || 'The emails go out within the hour.')); },
+            function () { planSay('good', savedText + ' The emails go out within the hour.'); });
+        }
       }, function (err) {
         st.planBusy = false;
         again();
@@ -1075,12 +1428,16 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         ui.video = h('video', { autoplay: true, playsinline: true, 'aria-label': 'Camera view' });
         ui.video.muted = true;
         ui.note = h('div', { class: 'viewer-note', text: 'The camera is off.' });
-        ui.startLabel = h('span', { text: 'Start scanning' });
+        ui.startLabel = h('span', { text: W('scan.start', 'Start scanning') });
         ui.start = h('button', { type: 'button', class: 'button primary big viewer-start', onclick: onStart }, cameraIcon(), ui.startLabel);
         ui.viewer = h('div', { class: 'viewer' }, ui.video, h('div', { class: 'frame', 'aria-hidden': 'true' }), ui.note, ui.start);
-        ui.pause = h('button', { type: 'button', class: 'button secondary', text: 'Pause', onclick: togglePause, hidden: true });
-        ui.torch = h('button', { type: 'button', class: 'button secondary', text: 'Light on', onclick: toggleTorch, hidden: true });
+        ui.pause = h('button', { type: 'button', class: 'button secondary', text: W('scan.pause', 'Pause'), onclick: togglePause, hidden: true });
+        ui.torch = h('button', { type: 'button', class: 'button secondary', text: W('scan.light', 'Light on'), onclick: toggleTorch, hidden: true });
         add(box, [ui.viewer, h('div', { class: 'row' }, ui.pause, ui.torch)]);
+        add(box, h('div', null,
+          h('button', { type: 'button', class: 'button secondary wide', text: W('kiosk.start', 'Kiosk mode \u2013 students scan themselves'), onclick: enterKiosk }),
+          h('p', { class: 'help', text: 'Stand the phone or tablet at the door with its screen facing the students: each one holds up their own code. ' +
+            'Only the camera and the result show. To leave kiosk mode, press and hold Exit for 3 seconds.' })));
       }
       ui.photo = h('input', { type: 'file', id: 'scan-photo', class: 'file-input', accept: 'image/*', capture: 'environment', onchange: onPhoto });
       add(box, h('div', null, ui.photo,
@@ -1089,13 +1446,13 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         live ? null : h('p', { class: 'help', text: "The camera opens. Take a clear photo of the student's code, close enough that the code fills most of the picture." })));
 
       ui.typeToggle = h('button', { type: 'button', class: 'linkish', 'aria-expanded': 'false', 'aria-controls': 'type-form',
-        text: 'Type the ID instead', onclick: toggleTyped });
+        text: W('scan.typeInstead', 'Type the ID instead'), onclick: toggleTyped });
       ui.typeInput = h('input', { id: 'type-id', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false',
         maxlength: '24', placeholder: 'K7Q2-M9XD or 0803 123 4567', 'aria-describedby': 'type-help' });
       ui.typeError = h('p', { class: 'type-error', role: 'alert', hidden: true });
       ui.typeForm = h('form', { id: 'type-form', class: 'type-form', hidden: true, novalidate: true, onsubmit: onTyped },
-        h('label', { for: 'type-id', text: 'Student ID or phone number' }),
-        h('div', { class: 'type-row' }, ui.typeInput, h('button', { type: 'submit', class: 'button primary', text: 'Mark' })),
+        h('label', { for: 'type-id', text: W('scan.typeLabel', 'Student ID or phone number') }),
+        h('div', { class: 'type-row' }, ui.typeInput, h('button', { type: 'submit', class: 'button primary', text: W('scan.mark', 'Mark') })),
         ui.typeError,
         h('p', { id: 'type-help', class: 'help', text: "Only if a code won't scan, or the student has no code with them: type the ID printed under their code, " +
           'like K7Q2-M9XD, or the phone number they signed up with.' }));
@@ -1110,7 +1467,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     }
 
     // ------------------------------------------------------------------
-    //  A short message to the System Manager (Settings: Messages from attendants)
+    //  A short message to the System Manager (Settings: Messages from assistants)
     // ------------------------------------------------------------------
 
     function inboxLeftText(n) { return n > 0 ? 'You can send ' + n + ' more today.' : 'You have sent the most messages for today.'; }
@@ -1128,7 +1485,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         send.textContent = 'Sending\u2026';
         call('message', [text], function (r) {
           send.textContent = 'Send';
-          if (r && r.blocked) { fatal("This scanning link isn't active", 'Ask the head attendant for a new link.'); return; }
+          if (r && r.blocked) { fatal("This scanning link isn't active", 'Ask the head assistant for a new link.'); return; }
           if (r && typeof r.left === 'number') { D.inbox.left = r.left; left.textContent = inboxLeftText(r.left); }
           send.disabled = !(D.inbox.left > 0);
           if (r && r.ok) { box.value = ''; add(status, banner('good', r.message)); return; }
@@ -1139,7 +1496,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
           add(status, banner('bad', "Couldn't reach the management system, so your message was not sent. Check the internet connection, then try again."));
         });
       });
-      return h('details', { class: 'inbox' }, h('summary', { text: 'Message the System Manager' }),
+      return h('details', { class: 'inbox' }, h('summary', { text: W('message.title', 'Message the System Manager') }),
         h('p', { class: 'muted', text: 'For something the System Manager should know. It goes to their inbox and email.' }),
         h('label', { for: 'inbox-text', class: 'inbox-label', text: 'Your message' }), box, left, h('p', null, send), status);
     }
@@ -1149,13 +1506,14 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       updateSoundButton();
       return h('footer', { class: 'wrap' },
         buildHelp(),
+        D.materialsLink ? h('p', null, h('a', { href: D.materialsLink, target: '_blank', rel: 'noopener', text: W('scan.materials', 'Course material') })) : null,
         h('p', null, ui.soundButton),
         h('p', { text: live && !IN_GOOGLE
           ? 'Keep this page open while you scan. To find it quickly next time, add it to your home screen from the browser menu.'
           : 'Keep this page open during class. The lists refresh every minute.' }));
     }
 
-    /** "Need help? Read the Attendants' Manual" (Settings: the manual links), or nothing. */
+    /** "Need help? Read the Assistants' Manual" (Settings: the manual links), or nothing. */
     function buildHelp() {
       var list = (D.manuals || []).filter(function (m) { return m && m.link && m.text; });
       if (!list.length) return null;
@@ -1175,7 +1533,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     function showReady(live) {
       ui.result.className = 'result';
       ui.result.textContent = '';
-      add(ui.result, [h('p', { class: 'result-title', text: 'Ready' }),
+      add(ui.result, [h('p', { class: 'result-title', text: W('scan.ready', 'Ready') }),
         h('p', { class: 'result-text', text: live ? "Tap Start scanning, then point the camera at a student's code."
           : "Tap Scan a code, then take a photo of the student's code." })]);
     }
@@ -1188,6 +1546,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
 
     /** Shows what the system answered (or a problem found on this phone). */
     function showResult(res) {
+      st.keptShown = false;
       var kind = res.kind === 'good' || res.kind === 'warn' ? res.kind : 'bad';
       var s = res.student || null;
       ui.result.className = 'result ' + kind;
@@ -1199,15 +1558,66 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         add(ui.result, h('div', { class: 'who' }, face,
           h('div', null, h('div', { class: 'who-name', text: s.name }),
             h('div', { class: 'who-sub', text: s.id + (s.className ? ' \u00b7 ' + s.className : '') }))));
-        if (s.photo) showPhoto(s.id, face);
+        if (s.photo) { if (s.photoData) photos[s.id] = s.photoData; showPhoto(s.id, face); }   // photoData: already in the system's cache
       }
       if (res.message) add(ui.result, h('p', { class: 'result-text', text: res.message }));
       if (res.time && String(res.message || '').indexOf(res.time) === -1) add(ui.result, h('p', { class: 'result-time', text: 'Scanned at ' + res.time }));
       st.shown = s ? s.id : null;
       feedback(kind);
+      if (st.kiosk) {   // the card stays long enough to read, then the next student
+        clearTimeout(st.kioskTimer);
+        st.kioskTimer = setTimeout(kioskReady, kind === 'good' ? 3500 : 6000);
+      }
     }
 
-    /** Puts the student's photo in place of their initials, so the attendant can check it's them. */
+    // ------------------------------------------------------------------
+    //  Kiosk mode: the phone stands at the door and students scan their own codes
+    // ------------------------------------------------------------------
+
+    function enterKiosk() {
+      if (st.kiosk) return;
+      prepareSound();
+      st.kiosk = true;
+      document.body.classList.add('kiosk');
+      try { var el = document.documentElement; if (el.requestFullscreen) el.requestFullscreen().catch(function () {}); } catch (e) { /* not allowed here */ }
+      var exit = h('button', { type: 'button', class: 'button secondary kiosk-exit', text: W('kiosk.exit', 'Exit (hold 3 seconds)') });
+      var hold = 0;
+      var cancel = function () { clearTimeout(hold); hold = 0; exit.classList.remove('holding'); };
+      exit.addEventListener('pointerdown', function (ev) { ev.preventDefault(); exit.classList.add('holding'); hold = setTimeout(exitKiosk, 3000); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { exit.addEventListener(n, cancel); });
+      exit.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); if (!hold) { exit.classList.add('holding'); hold = setTimeout(exitKiosk, 3000); } } });
+      exit.addEventListener('keyup', cancel);
+      st.kioskExit = exit;
+      document.body.appendChild(exit);
+      stopCamera();
+      cam.facing = 'user';   // the screen faces the students: the front camera
+      if (ui.start) ui.start.hidden = true;
+      startCamera();
+      kioskReady();
+    }
+
+    function kioskReady() {
+      if (!st.kiosk || st.busy) return;
+      ui.result.className = 'result';
+      ui.result.textContent = '';
+      add(ui.result, [h('p', { class: 'result-title', text: W('kiosk.ready', 'Welcome!') }),
+        h('p', { class: 'result-text', text: W('kiosk.help', 'Hold your code up to the camera.') })]);
+    }
+
+    function exitKiosk() {
+      if (!st.kiosk) return;
+      st.kiosk = false;
+      clearTimeout(st.kioskTimer);
+      document.body.classList.remove('kiosk');
+      if (st.kioskExit && st.kioskExit.parentNode) st.kioskExit.parentNode.removeChild(st.kioskExit);
+      st.kioskExit = null;
+      try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {}); } catch (e) { /* fine */ }
+      stopCamera();
+      cam.facing = 'environment';
+      build();
+    }
+
+    /** Puts the student's photo in place of their initials, so the assistant can check it's them. */
     function showPhoto(id, face) {
       var put = function (dataUrl) {
         if (st.shown !== id || !face.parentNode) return;
@@ -1231,11 +1641,96 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
 
     /** A code was read (by photo or live camera) or an ID was typed. */
     function handleCode(text, how) {
-      if (!idFromText(text)) {
+      var id = idFromText(text);
+      if (!id) {
         showResult({ kind: 'bad', title: 'Not a student code', message: "That code isn't a student code for this course." });
         return;
       }
+      // INSTANT SCANS: a student on today's list who hasn't been scanned yet is shown at once, and the scan is saved
+      // in the background while the next student is scanned. Anyone else waits for the system's answer, as before.
+      var known = st.roster[id];
+      if (known && !st.done[id] && how !== 'typed' && D.isClassDay && !D.scanClosed && (known.until === null || Date.now() < known.until)) {
+        st.done[id] = true;
+        delete st.roster[id];
+        var item = { text: text, how: how, id: id, name: known.name, at: Date.now() };
+        showResult({ kind: 'good', title: W('scan.instant', 'Scanned'), student: { id: id, name: known.name, className: known.className, photo: true },
+          message: W('scan.instantSaving', 'Saving\u2026 you can scan the next student.') });
+        st.instantShown = id;
+        addRecent(item, null);
+        st.line.push(item);
+        saveLine();   // kept in the browser's storage until the system answers, so a closed page doesn't lose it
+        pumpLine();
+        return;
+      }
       submit(text, how);
+    }
+
+    /**
+     * INSTANT SCANS: sends the scans in the line one at a time, in the background. Each answer replaces "Saving..." on its
+     * card (if it is still shown) and in the Recent scans list. Without a connection, the scan is kept on this phone.
+     */
+    function pumpLine() {
+      if (st.lineBusy || !st.line.length) return;
+      st.lineBusy = true;
+      var item = st.line[0];
+      var done = function () { st.line.shift(); saveLine(); st.lineBusy = false; if (st.line.length) pumpLine(); else refreshSoon(); };
+      var answer = function (res) {
+        addRecent(item, res);
+        if (st.instantShown === item.id && st.shown === item.id && !st.busy) {
+          showResult(res);   // the card on the screen gets its final title (Present, Late ...)
+        } else if (res && res.kind && res.kind !== 'good' && !st.busy) {
+          showResult(res);   // a problem with an earlier scan comes back on the screen (with its sound), so nobody misses it
+          st.instantShown = null;
+        } else if (res && res.kind && res.kind !== 'good') {
+          feedback(res.kind);
+        }
+      };
+      // ago: how long since the scan was made. The system counts back from its own clock, so this phone's clock doesn't matter.
+      call('scan', [item.text, item.how, item.retry || null, { ago: Math.max(0, Date.now() - item.at) }, true], function (res) {
+        if (res && res.title === 'Busy' && res.retry && !item.retry) { item.retry = res.retry; st.lineBusy = false; setTimeout(pumpLine, 800); return; }
+        answer(res && res.kind ? res : { kind: 'bad', title: 'Not saved', message: GENERIC });
+        if (!res || !res.kind || res.title === 'Busy') delete st.done[item.id];   // not saved: it can be scanned again
+        done();
+      }, function (err) {
+        if (err && err.notConnected) { answer({ kind: 'bad', title: 'Not saved', message: NOT_CONNECTED }); delete st.done[item.id]; done(); return; }
+        if (err && err.name === 'AbortError') {   // it took too long: it may still have been saved, so it isn't sent twice
+          answer({ kind: 'warn', title: 'No answer yet', message: item.name + ': the system hasn\'t answered, so this scan may not have been saved. Scan the code again to check.' });
+          delete st.done[item.id];
+          done();
+          return;
+        }
+        // No connection: kept on this phone with the moment it was scanned, and sent by itself later.
+        queue.push({ text: item.text, how: item.how, at: item.at });
+        saveQueue();
+        renderQueue();
+        addRecent(item, { kind: 'warn', title: 'Kept on this phone' });
+        scheduleQueue(20000);
+        done();
+      });
+    }
+
+    /** After the line is sent, today's lists are fetched once (the answers to instant scans don't carry them). */
+    function refreshSoon() {
+      clearTimeout(st.refreshSoonTimer);
+      st.refreshSoonTimer = setTimeout(function () { if (!st.busy && !st.line.length) refreshStatus(false); }, 4000);
+    }
+
+    /** The Recent scans list: the last few instant scans, "Saving..." until the answer comes. */
+    function addRecent(item, res) {
+      var found = null;
+      st.recent.forEach(function (r) { if (r.item === item) found = r; });
+      if (!found) { found = { item: item, res: null }; st.recent.unshift(found); }
+      if (res) found.res = res;
+      st.recent = st.recent.slice(0, 8);
+      if (!ui.recent) return;
+      ui.recent.textContent = '';
+      if (!st.recent.length) return;
+      add(ui.recent, h('p', { class: 'list-title', text: W('scan.recent', 'Recent scans') }));
+      add(ui.recent, h('ul', { class: 'recent' }, st.recent.map(function (r) {
+        var k = !r.res ? 'saving' : r.res.kind === 'good' ? 'good' : r.res.kind === 'warn' ? 'warn' : 'bad';
+        return h('li', { class: 'recent-' + k }, h('span', { class: 'recent-name', text: r.item.name }),
+          h('span', { class: 'recent-state', text: !r.res ? 'Saving\u2026' : (r.res.title || '') + (r.res.time ? ' \u00b7 ' + r.res.time : '') }));
+      })));
     }
 
     function submit(text, how, retry) {
@@ -1260,14 +1755,119 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         if (!res || !res.kind || res.title === 'Busy' || res.title === 'Not saved') cam.lastText = '';   // not saved: try again
         showResult(res && res.kind ? res : { kind: 'bad', title: 'Not saved', message: GENERIC });
         if (res && res.status) renderStatus(res.status);
-        if (res && res.title === 'Not on duty today') reopen();   // the head attendant changed this attendant's duty
+        if (res && res.title === 'Not on duty today') reopen();   // the head assistant changed this assistant's duty
       }, function (err) {
         if (seq !== st.seq) return;
         clearTimeout(timer);
         if (err && err.name === 'AbortError') { noAnswer(); return; }   // it took too long: it may still have been saved
         st.busy = false;
         cam.lastText = '';
-        showResult({ kind: 'bad', title: 'Not saved', message: err && err.notConnected ? NOT_CONNECTED : OFFLINE });
+        if (err && err.notConnected) { showResult({ kind: 'bad', title: 'Not saved', message: NOT_CONNECTED }); return; }
+        if (retry) { showResult({ kind: 'bad', title: 'Not saved', message: OFFLINE }); return; }   // after Busy: scan again, it keeps its time
+        keepScan(text, how);
+      });
+    }
+
+    // ------------------------------------------------------------------
+    //  Scans kept on the phone while it has no connection
+    //  Each is sent as soon as the connection is back, with the moment it was made, so nobody is
+    //  marked late for the network. They are kept in the browser's storage, so a closed page keeps them.
+    // ------------------------------------------------------------------
+
+    function queueKey() { return 'scanQueue:' + ((D && D.token) || link.token || ''); }
+    function loadQueue() {
+      try {
+        var raw = window.localStorage.getItem(queueKey());
+        var list = raw ? JSON.parse(raw) : [];
+        queue = Array.isArray(list) ? list.filter(function (q) { return q && typeof q.text === 'string' && q.at; }) : [];
+      } catch (e) { queue = []; }
+      // Instant scans that hadn't had their answer when the page was closed: sent again with the kept scans
+      // (one that was saved after all answers "Already marked today", so nothing is counted twice).
+      // Only when the page opens: when it is built again later, the line is still being sent from this page.
+      if (st.started) return;
+      try {
+        var left = JSON.parse(window.localStorage.getItem(lineKey()) || '[]');
+        if (Array.isArray(left) && left.length) {
+          left.forEach(function (q) {
+            if (q && typeof q.text === 'string' && q.at && !queue.some(function (k) { return k.text === q.text && k.at === q.at; })) {
+              queue.push({ text: q.text, how: q.how, at: q.at });
+            }
+          });
+          window.localStorage.removeItem(lineKey());
+          saveQueue();
+        }
+      } catch (e) { /* nothing kept */ }
+    }
+    function lineKey() { return 'scanLine:' + ((D && D.token) || link.token || ''); }
+    /** INSTANT SCANS: the line waiting for its answers, kept in the browser's storage (see loadQueue). */
+    function saveLine() {
+      try {
+        if (st.line.length) window.localStorage.setItem(lineKey(), JSON.stringify(st.line.map(function (q) { return { text: q.text, how: q.how, at: q.at }; })));
+        else window.localStorage.removeItem(lineKey());
+      } catch (e) { /* this page still sends them */ }
+    }
+    function saveQueue() {
+      try {
+        if (queue.length) window.localStorage.setItem(queueKey(), JSON.stringify(queue));
+        else window.localStorage.removeItem(queueKey());
+      } catch (e) { /* not kept across a reload: still sent from this page */ }
+    }
+    function keepScan(text, how) {
+      queue.push({ text: text, how: how, at: Date.now() });
+      saveQueue();
+      renderQueue();
+      showResult({ kind: 'warn', title: 'Kept on this phone', message: "No connection just now. This scan is kept on this phone and will be " +
+        'sent by itself when the connection is back, counting from this moment. ' + waitingText() + ' Carry on scanning.' });
+      st.keptShown = true;
+      scheduleQueue(20000);
+    }
+    function waitingText() { return queue.length + (queue.length === 1 ? ' scan is' : ' scans are') + ' waiting to be sent.'; }
+    function renderQueue() {
+      if (!ui.queue) return;
+      ui.queue.textContent = '';
+      if (!queue.length && !sentLater.length) return;
+      var box = h('div', { class: 'queue', role: 'status' });
+      if (queue.length) {
+        add(box, h('p', { text: waitingText() + (st.sending ? ' Sending\u2026' : '') }));
+        if (!st.sending) add(box, h('button', { type: 'button', class: 'button secondary', text: 'Send now', onclick: function () { sendQueue(); } }));
+      } else {
+        add(box, h('p', { text: 'The kept scans were sent.' }));
+      }
+      if (sentLater.length) {
+        add(box, h('ul', {}, sentLater.slice(-6).map(function (t) { return h('li', { text: t }); })));
+      }
+      add(ui.queue, box);
+    }
+    function scheduleQueue(ms) {
+      if (st.queueTimer) clearTimeout(st.queueTimer);
+      st.queueTimer = setTimeout(function () { st.queueTimer = 0; if (queue.length) sendQueue(); }, ms);
+    }
+    /** Sends the kept scans one at a time, oldest first, and stops at the first failure (it tries again later). */
+    function sendQueue() {
+      if (st.sending || !queue.length || !D || !D.token) return;
+      st.sending = true;
+      renderQueue();
+      var item = queue[0];
+      call('scan', [item.text, item.how, null, { ago: Math.max(0, Date.now() - item.at) }], function (res) {
+        st.sending = false;
+        if (res && res.title === 'Busy') { renderQueue(); scheduleQueue(5000); return; }   // kept: tried again shortly
+        if (res && res.kind) {
+          queue.shift();
+          saveQueue();
+          sentLater.push((res.student && res.student.name ? res.student.name + ': ' : '') + (res.title || 'Sent') +
+            (res.sentLater ? ' (scanned at ' + res.sentLater + ')' : ''));
+          if (res.status) renderStatus(res.status);
+          if (st.keptShown) { showResult(res); st.keptShown = false; }   // the "Kept on this phone" card gives way to the real result
+        } else {
+          queue.shift();   // an answer without a result: not kept again, the assistant can scan again
+          saveQueue();
+        }
+        renderQueue();
+        if (queue.length) scheduleQueue(300); else refreshStatus();
+      }, function () {
+        st.sending = false;
+        renderQueue();
+        scheduleQueue(20000);
       });
     }
 
@@ -1450,7 +2050,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       var box = ui.hand;
       if (!box) return;
       box.textContent = '';
-      add(box, h('h2', { text: 'Hand in a paper' }));
+      add(box, h('h2', { text: W('scan.handIn', 'Hand in a paper') }));
       if (!hand || hand.finished || !hand.student) {
         if (hand && hand.finished) {
           add(box, h('p', { class: 'banner ' + (hand.finished.ok ? 'good' : 'bad'), text: hand.finished.message }));
@@ -1733,7 +2333,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
 
     function note(text) { if (ui.note) ui.note.textContent = text; }
 
-    /** The attendant taps Start scanning: this tap also lets the phone beep and buzz after each scan. */
+    /** The assistant taps Start scanning: this tap also lets the phone beep and buzz after each scan. */
     function onStart() {
       prepareSound();
       ui.start.hidden = true;
@@ -1746,7 +2346,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       note('Starting the camera\u2026');
       navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: { ideal: cam.facing || 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
       }).then(function (stream) {
         cam.stream = stream;
         cam.track = stream.getVideoTracks()[0] || null;
@@ -1821,7 +2421,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       cam.paused = paused;
       if (ui.pause) ui.pause.textContent = paused ? 'Resume' : 'Pause';
       if (ui.viewer) ui.viewer.className = 'viewer' + (paused ? ' paused' : '');
-      note(paused ? 'Paused. Tap Resume to scan again.' : "Point the camera at a student's code.");
+      note(paused ? 'Paused. Tap Resume to scan again.' : st.kiosk ? W('kiosk.aim', 'Hold your code inside the square.') : "Point the camera at a student's code.");
     }
 
     function togglePause() {
@@ -1877,20 +2477,20 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
 
     function missingList(c) {
       if (!c.total) return h('p', { class: 'muted', text: "Nobody is on today's list for this class." });
-      if (!c.missing.length) return h('p', { class: 'muted', text: 'Everyone on the list has been scanned.' });
-      return [h('p', { class: 'list-title', text: 'Not scanned yet (' + c.missing.length + ')' }),
+      if (!c.missing.length) return h('p', { class: 'muted', text: W('scan.allScanned', 'Everyone on the list has been scanned.') });
+      return [h('p', { class: 'list-title', text: W('scan.notScanned', 'Not scanned yet (') + c.missing.length + ')' }),
         h('ul', { class: 'missing' }, c.missing.map(function (m) {
           return h('li', null, h('span', { text: m.name }), h('span', { class: 'id', text: m.id }));
         }))];
     }
 
-    /** Who teaches the class today: the administrators who checked in, or else the one placed. */
+    /** Who teaches the class today: the facilitators who checked in, or else the one placed. */
     function staffLine(c) {
       var s = c.staff || { placed: null, checkins: [] };
       var people = s.checkins && s.checkins.length ? s.checkins : (s.placed ? [s.placed] : []);
       var text = s.checkins && s.checkins.length
-        ? 'Administrator: ' + s.checkins.map(function (x) { return x.name + (x.time ? ' (checked in ' + x.time + ')' : ''); }).join(', ')
-        : s.placed ? 'Placed: ' + s.placed.name + ' (not checked in yet)' : 'No administrator placed yet.';
+        ? 'Facilitator: ' + s.checkins.map(function (x) { return x.name + (x.time ? ' (checked in ' + x.time + ')' : ''); }).join(', ')
+        : s.placed ? 'Placed: ' + s.placed.name + ' (not checked in yet)' : 'No facilitator placed yet.';
       var face = people.length ? h('div', { class: 'mini', 'aria-hidden': 'true', text: initials(people[0].name) }) : null;
       var line = h('p', { class: 'staff' }, face, h('span', { text: text }));
       if (face && people[0].photo && people[0].id) showAdminPhoto(people[0].id, face);
@@ -1914,7 +2514,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
     }
 
     // ------------------------------------------------------------------
-    //  Class ended: the end time and the attendant's answers (in the hall only)
+    //  Class ended: the end time and the assistant's answers (in the hall only)
     // ------------------------------------------------------------------
 
     function endFormOpen() {
@@ -1932,10 +2532,10 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         add(box, h('p', { class: 'done-line', text: '\u2713 You sent Class ended' + (c.ended ? ': ' + c.className + ' ended at ' + c.ended + '.' : '.') }));
         if (sent) add(box, banner('good', sent));
       } else {
-        if (c.ended) add(box, h('p', { class: 'muted', text: c.className + ' ended at ' + c.ended + ', as another attendant reported.' }));
-        add(box, h('button', { type: 'button', class: 'button secondary wide', text: 'Class ended',
+        if (c.ended) add(box, h('p', { class: 'muted', text: c.className + ' ended at ' + c.ended + ', as another assistant reported.' }));
+        add(box, h('button', { type: 'button', class: 'button secondary wide', text: W('scan.classEnded', 'Class ended'),
           onclick: function () { openEndForm(c.className); } }));
-        add(box, h('p', { class: 'help', text: 'At the end of class: give the time it ended' +
+        add(box, h('p', { class: 'help', text: W('scan.classEnded.help', 'At the end of class: give the time it ended') +
           ((D.feedback || []).length ? ' and answer a few questions.' : '.') +
           (D.studentFeedback && !c.ended ? ' Then the students marked present or late get their feedback link.' : '') }));
       }
@@ -1974,7 +2574,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       var send = h('button', { type: 'submit', class: 'button primary', text: 'Send' });
       var cancel = h('button', { type: 'button', class: 'button secondary', text: 'Cancel' });
       var el = h('form', { class: 'end-form', novalidate: true },
-        h('h3', { tabindex: '-1', text: 'Class ended' + (D.allClasses ? ' \u00b7 ' + className : '') }),
+        h('h3', { tabindex: '-1', text: W('scan.classEnded', 'Class ended') + (D.allClasses ? ' \u00b7 ' + className : '') }),
         timeField, box, status, h('div', { class: 'row' }, send, cancel));
       var entry = { el: el, busy: false };
       var say = function (kind, text) { status.textContent = ''; if (text) add(status, banner(kind, text)); };
@@ -2013,7 +2613,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         setBusy(true);
         call('end', [className, timeBox.value, form.read()], function (res) {
           setBusy(false);
-          if (res && res.blocked) { fatal("This scanning link isn't active", 'Ask the head attendant for a new link.'); return; }
+          if (res && res.blocked) { fatal("This scanning link isn't active", 'Ask the head assistant for a new link.'); return; }
           if (res && (res.ok || res.done)) {
             delete st.ending[className];
             st.ended[className] = res.message || 'Thank you. It is saved.';
@@ -2044,10 +2644,10 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
 
     /** Who is on duty in the class today, and when they checked in. */
     function dutyLine(c) {
-      var list = c.attendants || [];
-      if (!list.length) return h('p', { class: 'duty-line muted', text: 'No attendant on duty.' });
-      return h('p', { class: 'duty-line', text: (list.length > 1 ? 'Attendants on duty: ' : 'Attendant on duty: ') + list.map(function (x) {
-        return x.name + (x.time ? ' (checked in ' + x.time + ')' : ' (not checked in yet)');
+      var list = c.assistants || [];
+      if (!list.length) return h('p', { class: 'duty-line muted', text: 'No assistant on duty.' });
+      return h('p', { class: 'duty-line', text: (list.length > 1 ? 'Assistants on duty: ' : 'Assistant on duty: ') + list.map(function (x) {
+        return x.name + (x.role ? ' \u2013 ' + x.role : '') + (x.time ? ' (checked in ' + x.time + ')' : ' (not checked in yet)');
       }).join(', ') });
     }
 
@@ -2055,7 +2655,18 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       ui.status.textContent = '';
       if (status && status.me) noteMe(status.me);
       if (status) st.lastStatusAt = Date.now();
+      if (status && status.classes) {   // INSTANT SCANS: who is still to be scanned, so their card shows at once
+        st.roster = {};
+        status.classes.forEach(function (c) {
+          // until: the moment (on this phone's own timer) after which this class's scans wait for the system's answer again,
+          // because a scan could then be Too late or scanning closes (instantMs from the system; null = no limit today).
+          var until = typeof c.instantMs === 'number' ? Date.now() + c.instantMs : null;
+          (c.missing || []).forEach(function (m) { if (!st.done[m.id]) st.roster[m.id] = { id: m.id, name: m.name, className: c.className, until: until }; });
+        });
+      }
       if (!status || !status.classes || !status.classes.length) return;
+      if (status.overview) st.overview = status.overview;   // a scan's answer has no overview: keep the last one
+      if (D.allClasses && st.overview) add(ui.status, overviewBox(st.overview));
       add(ui.status, h('h2', { text: D.allClasses ? "Today's classes" : "Today's list" }));
       st.status = status;
       status.classes.forEach(function (c) {
@@ -2081,6 +2692,29 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
         h('button', { type: 'button', class: 'linkish', text: 'Refresh', onclick: function () { refreshStatus(true); } })));
     }
 
+    /** The head assistant's view of the whole day: the totals, each class's facilitator, and who can't make it. */
+    function overviewBox(o) {
+      var c = o.counts;
+      var tile = function (big, small) { return h('div', { class: 'tile' }, h('span', { class: 'big', text: big }), h('span', { class: 'small', text: small })); };
+      var tiles = c ? h('div', { class: 'tiles' },
+        tile(c.present + ' of ' + c.expected, 'present in the hall'),
+        c.online ? tile(c.joined + ' of ' + c.online, 'joined online') : null,
+        tile(c.assistantsIn + ' of ' + c.assistantsOn, 'assistants checked in'),
+        tile(c.facilitatorsIn + ' of ' + c.facilitatorsPlaced, 'facilitators checked in')) : null;
+      var fac = (o.facilitators || []).length ? h('ul', null, o.facilitators.map(function (f) {
+        var p = f.facilitator;
+        return h('li', { class: p && p.away ? 'away' : null, text: f.className + ': ' + (p ? p.name + (p.away ? " \u2013 can't make it" : p.time ? ' \u2013 checked in ' + p.time : ' \u2013 not checked in yet') : 'no facilitator placed') +
+          (f.others && f.others.length ? ' (also: ' + f.others.join(', ') + ')' : '') });
+      })) : null;
+      var away = (o.away || []).length ? h('ul', null, o.away.map(function (a) {
+        return h('li', { class: a.today ? 'away' : null, text: a.name + ' (' + String(a.role).toLowerCase() + ") can't make " + a.cls + (a.today ? ' today' : ' on ' + a.dateText) });
+      })) : h('p', { class: 'muted', text: "Nobody has said they can't make it." });
+      return h('section', { class: 'overview', 'aria-label': 'Overview' },
+        h('h2', { text: W('scan.overview', 'Overview') }), tiles,
+        fac ? [h('h3', { text: 'Facilitators' }), fac] : null,
+        h('h3', { text: "Can't make it" }), away);
+    }
+
     function refreshStatus(manual) {
       if (st.statusBusy || !D.ready) return;
       st.statusBusy = true;
@@ -2088,7 +2722,7 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       call('status', [], function (r) {
         st.statusBusy = false;
         if (!r) return;
-        if (r.blocked) { fatal("This scanning link isn't active", 'Ask the head attendant for a new link.'); return; }
+        if (r.blocked) { fatal("This scanning link isn't active", 'Ask the head assistant for a new link.'); return; }
         if (r.closed) {
           st.lastStatusAt = Date.now();
           if (D.isClassDay) { D.isClassDay = false; renderBanners(); renderDuty(); }
@@ -2179,6 +2813,84 @@ shaded:"#1f4fd6",doubtful:"#e0141e"};return a.lineWidth=2,a.font="bold 13px Aria
       app.textContent = 'Something went wrong while opening the scanner. Please reload the page.';
       if (window.console) console.error(err);
     }
+  })();
+  </script>
+  <script>
+  /* OWN WORDS: the words you typed in the All wording tab (Wording.gs) replace the system's words on this page, as it
+     is drawn and whenever it changes. Whole words only, capitals as typed; each piece of text is changed once. */
+  (function () {
+    var data = window.DATA;
+    try { if (!data) { var el = document.getElementById('page-data'); data = el ? JSON.parse(el.textContent) : null; } } catch (e) { data = null; }
+    var pairs = data && data.ownWords;
+    if (!pairs || !pairs.length || !window.MutationObserver) return;
+    var list = pairs.map(function (p) {
+      var esc = String(p[0]).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var start = /^[A-Za-z0-9]/.test(p[0]) ? '(^|[^A-Za-z0-9])' : '()';
+      var end = /[A-Za-z0-9]$/.test(p[0]) ? '(?![A-Za-z0-9])' : '';
+      return { re: new RegExp(start + esc + end, 'g'), to: String(p[1]) };
+    });
+    function swap(text) {
+      if (!text || !/[A-Za-z]/.test(text)) return text;
+      if (/https?:\/\//.test(text)) {   // links are never changed
+        return text.split(/(https?:\/\/[^\s<>"]+)/).map(function (part, i) { return i % 2 ? part : swap(part); }).join('');
+      }
+      var marks = [];
+      var out = text;
+      list.forEach(function (p) {
+        out = out.replace(p.re, function (m, pre) { marks.push(p.to); return pre + '\u0000' + (marks.length - 1) + '\u0000'; });
+      });
+      return marks.length ? out.replace(/\u0000(\d+)\u0000/g, function (m, n) { return marks[Number(n)]; }) : text;
+    }
+    var done = typeof WeakMap === 'function' ? new WeakMap() : null;
+    function skip(node) {
+      var p = node.parentNode;
+      while (p && p.nodeType === 1) {
+        var t = p.nodeName;
+        if (t === 'SCRIPT' || t === 'STYLE' || t === 'TEXTAREA' || p.isContentEditable) return true;
+        p = p.parentNode;
+      }
+      return false;
+    }
+    function fixText(node) {
+      if (skip(node)) return;
+      if (done && done.get(node) === node.nodeValue) return;
+      var after = swap(node.nodeValue);
+      if (after !== node.nodeValue) node.nodeValue = after;
+      if (done) done.set(node, node.nodeValue);
+    }
+    var ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
+    var attrDone = typeof WeakMap === 'function' ? new WeakMap() : null;   // what was last written, so a change is made once
+    function fixEl(el) {
+      var seen = attrDone ? (attrDone.get(el) || {}) : {};
+      ATTRS.forEach(function (a) {
+        var v = el.getAttribute(a);
+        if (!v || seen[a] === v) return;
+        var w = swap(v);
+        seen[a] = w;
+        if (w !== v) el.setAttribute(a, w);
+      });
+      if (attrDone) attrDone.set(el, seen);
+      if (el.nodeName === 'INPUT' && /^(button|submit)$/i.test(el.type) && el.value) {
+        var v2 = swap(el.value); if (v2 !== el.value) el.value = v2;
+      }
+    }
+    function walk(root) {
+      if (root.nodeType === 3) { fixText(root); return; }
+      if (root.nodeType !== 1 && root.nodeType !== 9 && root.nodeType !== 11) return;
+      if (root.nodeType === 1) { if (root.nodeName === 'SCRIPT' || root.nodeName === 'STYLE') return; fixEl(root); }
+      var w = document.createTreeWalker(root, 5, null, false);   // elements and text
+      var n;
+      while ((n = w.nextNode())) { if (n.nodeType === 3) fixText(n); else fixEl(n); }
+    }
+    document.title = swap(document.title);
+    walk(document.body);
+    new MutationObserver(function (changes) {
+      changes.forEach(function (c) {
+        if (c.type === 'characterData') fixText(c.target);
+        else if (c.type === 'attributes') fixEl(c.target);
+        else for (var i = 0; i < c.addedNodes.length; i++) walk(c.addedNodes[i]);
+      });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
   })();
   </script>
 </body>
