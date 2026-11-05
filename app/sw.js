@@ -11,6 +11,9 @@
   - The font (polish18-C, LOOK-42: Roboto Flex from Google Fonts, as every page): its style sheet and font file are kept on
     the phone the first time, then used from there; with no connection and no copy, the font is left out quietly.
 */
+// Stage B (owner, Wed 4 Nov 2026): the build writes this install's version here (and a stamp of the manifest and icons), so
+// every install is a new helper on the phone. The store's name (CACHE) stays.
+var BUILD = 'p14_c80a0651ea9c-569e0da4';
 var CACHE = 'soj-app-2';   // polish18-B: the frame updates itself at a safe moment (polish18-C: the font is kept in it too)
 var NEXT = 'sj-next-page';  // the downloaded update, waiting for its safe moment (a name no real file has)
 var FILES = ['./', 'manifest.webmanifest', '../icon-192.png', '../icon-512.png'];
