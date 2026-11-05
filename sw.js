@@ -11,6 +11,10 @@
   - The icons and the font: the kept copy first; with no connection and no copy, the font is left out quietly.
   - Everything sent to the management system (script.google.com) is never touched or kept here.
 */
+// Stage B (owner, Wed 4 Nov 2026): the build writes this install's version here (and a stamp of the manifest and icons), so
+// every install is a new helper: the phone installs it, and the install step fetches the manifest and icons afresh. The
+// store's name (CACHE) stays, so the page kept on the phone is never lost.
+var BUILD = 'p14_c80a0651ea9c-569e0da4';
 var CACHE = 'live-scanner-3';   // polish18-B: the page opens from the phone and updates itself at a safe moment
 var FILES = ['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 var NEXT = 'sj-next-page';      // the downloaded update, waiting for its safe moment (a name no real file has)
