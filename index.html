@@ -541,7 +541,7 @@ y:w.alignmentPattern.y},bottomLeft:{x:f.x,y:f.y},dimension:w.dimension,topLeft:{
     function boot(api, args, onOk, onFail) { var b = batchB || (batchB = makeBatch()); if (b.boot) b.boot(api, args, onOk, onFail); else call(api, args, onOk, onFail); }
     /** The function and its arguments inside Google, as the page sends them alone. */
     function googleArgs(api, args) {
-      var name = { faces: 'getFaces', myPhoto: 'myPhoto', details: 'requestDetailsChange', scan: 'scanCode', status: 'getClassStatus', photo: 'getStudentPhoto', adminPhoto: 'getFacilitatorPhoto',
+      var name = { faces: 'getFaces', myPhoto: 'myPhoto', details: 'requestDetailsChange', scan: 'scanCode', status: 'getClassStatus', photo: 'getStudentPhoto', cards: 'getCardPhotos', adminPhoto: 'getFacilitatorPhoto',
           end: 'submitClassEnd', info: 'getScannerInfo', checkin: 'assistantCheckIn', duties: 'saveAssistantDuties',
           message: 'messageFromAssistant', available: 'setDutyAvailability', team: 'setAssistantRole', understudy: 'decideUnderstudy', notice: 'postNotice', dutyEmails: 'sendDutyEmailsNow',
           signups: 'getNewSignups', followups: 'getFollowUps', followupAction: 'followUpAction', person: 'checkPerson',
@@ -573,6 +573,7 @@ y:w.alignmentPattern.y},bottomLeft:{x:f.x,y:f.y},dimension:w.dimension,topLeft:{
       var body = { api: api, attendant: link.token };
       if (api === 'scan') { body.text = args[0]; body.how = args[1]; if (args[2]) body.retry = args[2]; if (args[3]) body.queuedAt = args[3]; if (args[4]) body.light = true; }
       if (api === 'photo' || api === 'adminPhoto') body.id = args[0];
+      if (api === 'cards') { body.ids = args[0]; body.have = args[1]; }   // B-136 (Photos.gs getCardPhotos)
       if (api === 'end') { body.className = args[0]; body.ended = args[1]; body.answers = args[2]; }
       if (api === 'duties') { body.changes = args[0]; if (args[1]) body.later = true; }
       if (api === 'message') body.text = args[0];
@@ -3351,6 +3352,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
         ui.result.setAttribute('data-time', res.time);
         ui.result.firstChild.setAttribute('data-time', res.time);
       } else ui.result.removeAttribute('data-time');
+      st.shown = s ? s.id : null;   // B-136: before the photo is put in (showPhoto checks it; a kept photo is put in at once)
       if (s) {
         var face = h('div', { class: 'face', 'aria-hidden': 'true', text: initials(s.name) });
         add(ui.result, h('div', { class: 'who' }, face,
@@ -3595,13 +3597,57 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
         face.parentNode.replaceChild(img, face);
       };
       if (photos[id]) { put(photos[id]); return; }
-      call('photo', [id], function (r) {
-        if (!r || !r.ok || typeof r.dataUrl !== 'string' || r.dataUrl.indexOf('data:image/') !== 0) return;
-        var keys = Object.keys(photos);
-        if (keys.length >= 40) delete photos[keys[0]];
-        photos[id] = r.dataUrl;
-        put(r.dataUrl);
-      }, function () { /* keep the initials */ });
+      var ask = function () {
+        call('photo', [id], function (r) {
+          if (!r || !r.ok || typeof r.dataUrl !== 'string' || r.dataUrl.indexOf('data:image/') !== 0) return;
+          keepPhoto(id, r.dataUrl);
+          put(r.dataUrl);
+        }, function () { /* keep the initials */ });
+      };
+      cardStore.get(id).then(function (k) { if (k && k.d) { keepPhoto(id, k.d); put(k.d); } else ask(); }, ask);   // B-136: this phone's copy first
+    }
+    /** A photo in the page's memory (the newest 400; the phone keeps them all in sj-cards). */
+    function keepPhoto(id, d) {
+      var keys = Object.keys(photos);
+      if (keys.length >= 400 && !photos[id]) delete photos[keys[0]];
+      photos[id] = d;
+    }
+
+    /**
+     * B-136 (the owner, Tue 17 Nov 7:06 PM: "we need to be able to identify people immediately"): as the page opens (and when new
+     * students join today's list), the photos of everyone still to be scanned come in the background, 40 in one call
+     * (Photos.gs getCardPhotos), and stay on this phone (sj-cards, with the photo's version: a newer one from the system always
+     * replaces it). So a scan shows the name and the face together, with no call. Each student once a visit; none in Low data.
+     */
+    var cardsAsked = {}, cardsPruned = false;
+    function preloadCards() {
+      try { if (st.stale || (window.lowData && window.lowData())) return; } catch (e) { /* on */ }   // st.stale: the last copy (it asks nothing)
+      var ids = Object.keys(st.roster).filter(function (id) { return !cardsAsked[id]; });
+      if (!ids.length) return;
+      ids.forEach(function (id) { cardsAsked[id] = true; });
+      if (!cardsPruned) {   // a student not seen for 30 days (left the course): their photo leaves this phone
+        cardsPruned = true;
+        cardStore.list('').then(function (all) { all.forEach(function (x) { if (x && x.id && !(x.t > Date.now() - 30 * 864e5)) cardStore.del(x.id); }); });
+      }
+      var have = {};
+      Promise.all(ids.map(function (id) { return cardStore.get(id).then(function (k) { if (k && k.d) { keepPhoto(id, k.d); have[id] = k.v; } }, function () {}); })).then(function () {
+        var next = function (i) {
+          if (i >= ids.length) return;
+          var part = ids.slice(i, i + 40), h = {};
+          part.forEach(function (id) { if (have[id]) h[id] = have[id]; });
+          call('cards', [part, h], function (r) {
+            var got = (r && r.ok && r.photos) || {};
+            part.forEach(function (id) {
+              var x = got[id];
+              if (x === null) { delete photos[id]; cardStore.del(id); }
+              else if (x && typeof x.d === 'string' && x.d.indexOf('data:image/') === 0) { keepPhoto(id, x.d); cardStore.put(id, { id: id, v: x.v, d: x.d, t: Date.now() }); }
+              else if (x && x.same && photos[id]) cardStore.put(id, { id: id, v: x.v, d: photos[id], t: Date.now() });
+            });
+            next(i + 40);
+          }, function () { /* the scan asks for the photo itself */ });
+        };
+        next(0);
+      });
     }
 
     // ------------------------------------------------------------------
@@ -4014,8 +4060,9 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
     // not yet saved by the system, is kept on this phone (IndexedDB; localStorage if that is missing) until it is handed in or
     // cancelled; a reload (or a closed page) picks it up where it was and sends what is left.
     var HAND_KEEP_DAYS = 7;
-    var handStore = (function () {
-      var name = 'sj-hand', db = null;
+    // B-136: the same small store keeps the scan card photos ('sj-cards'; no localStorage copy: pictures are too big for it).
+    function kvStore(name, pre) {
+      var db = null;
       var open = function () {
         if (db) return Promise.resolve(db);
         return new Promise(function (resolve, reject) {
@@ -4035,7 +4082,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
           });
         });
       };
-      var ls = function (k) { return 'sj-hand:' + k; };
+      var ls = function (k) { if (!pre) throw new Error('none'); return pre + k; };
       return {
         put: function (k, v) { return tx('readwrite', function (st) { return st.put(v, k); }).catch(function () { try { window.localStorage.setItem(ls(k), JSON.stringify(v)); } catch (e) { /* this phone can't keep it */ } }); },
         get: function (k) { return tx('readonly', function (st) { return st.get(k); }).catch(function () { try { return JSON.parse(window.localStorage.getItem(ls(k)) || 'null'); } catch (e) { return null; } }); },
@@ -4053,7 +4100,9 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
           }).catch(function () { return []; });
         }
       };
-    })();
+    }
+    var handStore = kvStore('sj-hand', 'sj-hand:');
+    var cardStore = kvStore('sj-cards', '');
     function handKey() { return String((D && D.token) || (typeof link !== 'undefined' && link.token) || 'page'); }
     var handSeq = 0;
     /** Keeps the paper now on this phone (or forgets it when there is none to keep). */
@@ -4154,17 +4203,18 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
     }
     /** What submitHandIn gets for a paper. */
     function handPayload(hd) {
-      var pages = {}, answers = {}, answerPictures = {}, unclearPictures = {};
+      var pages = {}, answers = {}, answerPictures = {}, unclearPictures = {}, morePictures = {};
       Object.keys(hd.pages).forEach(function (n) {
         var p = hd.pages[n];
         if (!p.pageFile) return;
         pages[n] = p.pageFile;
+        if (p.moreFile) morePictures[n] = p.moreFile;   // B-128
         copyInto(answers, p.answers);
         copyInto(answerPictures, p.answerFiles);
         copyInto(unclearPictures, p.unclearFiles);
       });
       return { studentId: hd.student.id, serial: hd.serial, pages: pages, answers: answers,
-        answerPictures: answerPictures, unclearPictures: unclearPictures, addPages: !!hd.addPages };
+        answerPictures: answerPictures, unclearPictures: unclearPictures, morePictures: morePictures, addPages: !!hd.addPages };
     }
     function waitOrOnline(ms) {
       return new Promise(function (resolve) {
@@ -4256,6 +4306,8 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
         r[name].apply(r, [proof()].concat(args || []));   // StaffLinks.gs: with this phone's proof
       });
     }
+    /** [3] -> "page 3"; [2, 3, 4] -> "pages 2, 3 and 4" (B-125: papers of more than 2 pages). */
+    function pagesText(list, word) { return 'page' + (list.length > 1 ? 's ' : ' ') + list.join(', ').replace(/, (\d+)$/, ' ' + (word || 'and') + ' $1'); }
     function copyInto(to, from) { Object.keys(from || {}).forEach(function (k) { to[k] = from[k]; }); return to; }
 
     /**
@@ -4424,7 +4476,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
       if (hand.already && !hand.addPages && !hand.replacing) {
         var a = hand.already;
         add(box, banner('warn', 'Paper ' + a.paper + ' was handed in for ' + s.name + ' already' +
-          (a.missing.length ? ', without page ' + a.missing.join(' and ') + '.' : ', with every page.')));
+          (a.missing.length ? ', without ' + pagesText(a.missing) + '.' : ', with every page.')));
         if (a.missing.length) {
           add(box, h('button', { type: 'button', class: 'button primary wide', text: 'Add missing page' + (a.missing.length > 1 ? 's' : ''),
             onclick: function () { hand.addPages = true; hand.serial = a.paper; hand.pageCount = a.pages; renderHand(); } }));
@@ -4453,7 +4505,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
       if (pending) add(box, h('p', { class: 'help' }, spinner(), ' Saving the pictures\u2026 (' + pending + ' left)'));
       var missing = missingPages();
       add(box, h('button', { type: 'button', class: 'button ' + (next ? 'secondary' : 'primary') + ' wide', disabled: ready ? null : true,
-        text: missing.length && count ? 'Hand in without page ' + missing.join(' and ') + ' (add later)' : 'Hand in', onclick: submitHand }));
+        text: missing.length && count ? 'Hand in without ' + pagesText(missing) + ' (add later)' : 'Hand in', onclick: submitHand }));
       add(box, h('button', { type: 'button', class: 'button secondary', text: 'Cancel this paper', onclick: cancelHand }));
     }
 
@@ -4551,7 +4603,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
           return;
         }
         if (hand.addPages && hand.already.missing.indexOf(res.page) === -1) {
-          done('Page ' + res.page + ' was handed in already. Photograph page ' + hand.already.missing.join(' or ') + '.');
+          done('Page ' + res.page + ' was handed in already. Photograph ' + pagesText(hand.already.missing, 'or') + '.');
           return;
         }
         hand.serial = res.qr.serial;
@@ -4585,6 +4637,8 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
       });
     }
 
+    /** B-128: the share of ink below the More space box's label that means something is written in it. */
+    var MORE_INK = 0.004;
     /** Keeps what was read on a page and saves its pictures (the page, each written answer, each unclear question). */
     function keepPage(res) {
       var n = res.page;
@@ -4604,6 +4658,11 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
         }
       });
       res.regions.forEach(function (r) { pictures.push({ kind: 'answer', n: r.q, box: r.box }); });
+      // B-128: the More space box at the end of the page, kept only when something is written in it (below its printed label)
+      if (res.more && window.OMR.inkShare) {
+        var mb = res.more, inner = [mb[0] + 2, mb[1] + 6, Math.max(1, mb[2] - 4), Math.max(1, mb[3] - 8)];
+        try { if (window.OMR.inkShare(res.canvas, inner) >= MORE_INK) pictures.push({ kind: 'more', n: n, box: mb }); } catch (e) { /* no box picture */ }
+      }
       var images = pictures.map(function (p) {
         var c = p.box ? window.OMR.crop(res.canvas, p.box) : res.canvas;
         return { kind: p.kind, n: p.n, data: window.OMR.toJpeg(c, p.kind === 'page' ? 0.7 : 0.8) };
@@ -4641,6 +4700,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
         page.waiting = false;
         if (img.kind === 'page') page.pageFile = r.id;
         else if (img.kind === 'answer') (page.answerFiles[img.n] = page.answerFiles[img.n] || []).push(r.id);
+        else if (img.kind === 'more') page.moreFile = r.id;   // B-128
         else page.unclearFiles[img.n] = r.id;
         handUnpend(hd, item);
         pictureDone(hd, page);
@@ -5172,6 +5232,7 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
           var until = typeof c.instantMs === 'number' ? Date.now() + c.instantMs : null;
           (c.missing || []).forEach(function (m) { if (!st.done[m.id]) st.roster[m.id] = { id: m.id, name: m.name, className: c.className, until: until }; });
         });
+        preloadCards();   // B-136
       }
       if (!status || !status.classes || !status.classes.length) return;
       st.hereCount = status.classes.reduce(function (n, c) { return n + (c.present || 0) + (c.late || 0); }, 0);   // u21: "Class 3 \u00b7 42 in" on the camera
