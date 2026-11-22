@@ -284,6 +284,7 @@ a.kind="",a.url="",a.box&&(a.box.hidden=!0,h("")),document.documentElement.class
     border-radius: 12px; font: inherit; font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; cursor: pointer; }
   .button.wide { display: flex; width: 100%; margin-top: 12px; }
   .button svg { flex: none; }
+  .app-alert { text-align: center; padding: 4px 4px 8px; } .app-alert .sj-ico { width: 48px; height: 48px; margin: 4px auto 8px; display: flex; } .app-alert h2 { margin: 0 0 6px; font: 600 20px var(--font); } .app-alert p { margin: 0 0 14px; }
   .app-quiet { display: block; width: 100%; margin-top: 8px; min-height: 44px; border: 0; background: none; color: var(--link); font: 600 16px var(--font); cursor: pointer; }
   .sj-phone-list { margin: 16px 0 0; }
   a.sj-phone-item { text-decoration: none; }
@@ -470,7 +471,10 @@ a.kind="",a.url="",a.box&&(a.box.hidden=!0,h("")),document.documentElement.class
     share: '<path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 11H6v10h12V11h-2"/>',
     addHome: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/>',
     chev: '<path d="M9 6l6 6-6 6"/>',
-    pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>'   // polish18-B: Rename
+    pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>',
+    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4l2-2z"/><path d="M10 21h4"/>',   // B-134 alerts
+    bellOff: '<path d="M6 16V11a6 6 0 0 1 9.5-4.9M18 11v5l2 2H8"/><path d="M10 21h4M3 3l18 18"/>',
+    okCircle: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>'   // polish18-B: Rename
   };
   function svgOf(name, size) {
     if (EXTRA[name]) return '<svg width="' + (size || 20) + '" height="' + (size || 20) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + EXTRA[name] + '</svg>';
@@ -658,6 +662,7 @@ a.kind="",a.url="",a.box&&(a.box.hidden=!0,h("")),document.documentElement.class
       loaded = true;
       clearTimeout(loadTimer);
       shell.className = 'gone';
+      alertsOffer();   // B-134: once, the offer to turn on alerts
     } else if (d.soj === 'id' && d.id && d.id.t === current.t) {
       current.id = cleanId(d.id, current.t);
       current.at = Math.max(Date.now(), current.at || 0);
@@ -667,6 +672,8 @@ a.kind="",a.url="",a.box&&(a.box.hidden=!0,h("")),document.documentElement.class
       show([el('h1', { text: W('app.goneTitle', 'This link no longer works') }),
         el('p', { class: 'muted', text: W('app.goneText', 'Open your new link from your email in the browser, then tap \u201cSave this page as an app on your phone\u201d again.') }),
         book.pages.length ? btn(W('app.openOther', 'Open another page'), startApp, 'secondary') : null]);
+    } else if (d.soj === 'push-done' && d.t === current.t && typeof d.q === 'string' && pushWait[d.q]) {
+      var f = pushWait[d.q]; delete pushWait[d.q]; f(d.r && typeof d.r === 'object' ? d.r : null);   // B-134: the page's answer
     } else if (d.soj === 'menu') {
       openMenu();
     } else if (d.soj === 'busy' && d.t === current.t && typeof d.q === 'string' && d.q === upd.q) {
@@ -832,6 +839,128 @@ a.kind="",a.url="",a.box&&(a.box.hidden=!0,h("")),document.documentElement.class
     sheet.el.classList.add('sj-settings-sheet');
     return sheet;
   }
+  // ------------------------------------------------------------------ B-134 alerts (the owner, Sun 22 Nov 2026; mockup 1-5)
+  // Turn on alerts: the phone's Allow (asked at the tap), the academy's key from the page, the phone's alert address back to
+  // the page (Push.gs pushSave, with the page's own proof). This page never sees a link code in an alert: a tap opens the app.
+  var pushWait = {};
+  var ALERTS_ASKED = 'sojAlertsAsked';
+  function pushOk() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+  function askPagePush(action, sub, done) {
+    if (!pageWin || !pageOrigin || !current) { done(null); return; }
+    var q = String(Math.random()).slice(2, 12);
+    pushWait[q] = done;
+    setTimeout(function () { if (pushWait[q]) { delete pushWait[q]; done(null); } }, 30000);
+    try { pageWin.postMessage({ soj: 'push', q: q, action: action, sub: sub || {} }, pageOrigin); } catch (e) { delete pushWait[q]; done(null); }
+  }
+  function keyBytes(b64) {
+    var s = String(b64).replace(/-/g, '+').replace(/_/g, '/'); s += '==='.slice((s.length + 3) % 4);
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function keyOf(sub) {
+    try { var k = new Uint8Array(sub.options.applicationServerKey), s = ''; for (var i = 0; i < k.length; i++) s += String.fromCharCode(k[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); } catch (e) { return ''; }
+  }
+  /** The phone's helper, or an error after 8 s (review 8: in private mode it may never be ready). */
+  function swReady() {
+    return Promise.race([navigator.serviceWorker.ready, new Promise(function (ok, no) { setTimeout(function () { no(new Error('no helper')); }, 8000); })]);
+  }
+  function mySub() {
+    if (!pushOk()) return Promise.resolve(null);
+    return swReady().then(function (reg) { return reg.pushManager.getSubscription(); }).catch(function () { return null; });
+  }
+  /** The one alerts card (mockup 1-4): state 'offer' | 'on' | 'blocked' | 'ios' | 'none' | 'busy', with a line of news. */
+  function alertCard(state, news) {
+    var T = {
+      offer: ['bell', 'blue', W('alerts.offerTitle', 'Get alerts on this phone'), W('alerts.offerText', 'Your duty, papers to mark and answers to decide, the moment they\u2019re ready.')],
+      on: ['okCircle', 'green', W('alerts.onTitle', 'Alerts are on'), W('alerts.onText', 'Everyday reminders come here instead of email. Results and records still come by email.')],
+      blocked: ['bellOff', 'orange', W('alerts.blockedTitle', 'Alerts are blocked'), W('alerts.blockedText', 'In your phone\u2019s Settings, open Notifications, then SOJ Academy, and choose Allow. You\u2019ll get emails meanwhile.')],
+      ios: ['addHome', 'blue', W('alerts.iosTitle', 'On iPhone, alerts need the app'), W('alerts.iosText', 'Tap Share, then Add to Home Screen. Open SOJ Academy from there and tap Turn on alerts.')],
+      none: ['bellOff', 'orange', W('alerts.noneTitle', 'This phone can\u2019t take alerts'), W('alerts.noneText', 'Its browser has no alerts. Reminders come by email.')],
+      busy: ['bell', 'blue', W('alerts.busyTitle', 'Turning on alerts\u2026'), W('alerts.busyText', 'Tap Allow when the phone asks.')]
+    }[state];
+    var kids = [tile(T[0], T[1]), el('h2', { text: T[2] }), el('p', { class: 'muted', text: T[3] })];
+    if (news) kids.push(el('p', { class: 'muted', role: 'status', text: news }));
+    if (state === 'offer') { kids.push(btn(W('alerts.turnOn', 'Turn on alerts'), turnOn)); kids.push(btn(W('alerts.notNow', 'Not now'), function () { store.set(ALERTS_ASKED, Date.now()); closeMenu(); }, 'quiet')); }
+    if (state === 'on') { kids.push(btn(W('alerts.test', 'Send me a test alert'), alertsTest, 'secondary')); kids.push(btn(W('alerts.turnOff', 'Turn off alerts'), turnOff, 'quiet')); }
+    if (state === 'blocked') kids.push(btn(W('alerts.tryAgain', 'Try again'), turnOn, 'secondary'));
+    if (state === 'ios') kids.push(btn(W('alerts.showHow', 'Show me how'), function () { closeMenu(); addHelp(); }, 'secondary'));
+    openSheet(W('app.alerts', 'Alerts'), el('div', { class: 'app-alert' }, kids), W('app.done', 'Done'));
+  }
+  function alertsSheet(news) {
+    if (isIOS && !standalone()) return alertCard('ios', news);
+    if (!pushOk()) return alertCard('none', news);
+    if (Notification.permission === 'denied') return alertCard('blocked', news);
+    // Review 8: "on" only when the system keeps this phone for THIS page (asked), not from the phone alone.
+    mySub().then(function (sub) {
+      if (!sub || Notification.permission !== 'granted') { alertCard('offer', news); return; }
+      askPagePush('state', sub.toJSON(), function (r) { alertCard(r && r.ok && r.on ? 'on' : 'offer', news); });
+    });
+  }
+  function alertsFail(r) {
+    var why = r && r.pin ? W('alerts.pin', 'Enter your PIN on your page first, then try again.')
+      : r && r.nopush ? W('alerts.pageNo', 'This page doesn\u2019t send alerts yet.')
+      : (r && r.message) || W('alerts.failed', 'Alerts couldn\u2019t be turned on just now. Please try again.');
+    alertsSheet(why);
+  }
+  /** Turn on alerts: the phone's Allow first (it must be asked at the tap), then the key, the address, and "Alerts are on". */
+  function turnOn() {
+    if (!pushOk()) { alertCard('none'); return; }
+    // The phone's Allow, asked at the tap (old Safari answers through a callback instead of a promise: review 8).
+    var asked = new Promise(function (ok) {
+      try { var pr = Notification.requestPermission(ok); if (pr && pr.then) pr.then(ok, function () { ok(Notification.permission); }); } catch (e) { ok(Notification.permission); }
+    });
+    asked.then(function (p) {
+      p = p || Notification.permission;
+      if (p !== 'granted') { alertsSheet(); return; }
+      alertCard('busy');
+      askPagePush('key', null, function (r) {
+        if (!r || !r.ok || !r.key) { alertsFail(r); return; }
+        swReady().then(function (reg) {
+          return reg.pushManager.getSubscription().then(function (old) {
+            if (old && keyOf(old) === r.key) return old;
+            return (old ? old.unsubscribe() : Promise.resolve()).then(function () {
+              return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(r.key) });
+            });
+          });
+        }).then(function (sub) {
+          askPagePush('on', sub.toJSON(), function (r2) {
+            if (!r2 || !r2.ok) { alertsFail(r2); return; }
+            store.set(ALERTS_ASKED, Date.now());
+            alertsSheet(r2.message || '');
+          });
+        }).catch(function () { alertsFail(null); });
+      });
+    });
+  }
+  function turnOff() {
+    mySub().then(function (sub) {
+      if (!sub) { alertsSheet(); return; }
+      askPagePush('off', sub.toJSON(), function () { sub.unsubscribe().catch(function () { /* gone already */ }).then(function () { alertsSheet(W('alerts.offNow', 'Alerts are off on this phone. Reminders come by email.')); }); });
+    });
+  }
+  function alertsTest() {
+    mySub().then(function (sub) {
+      if (!sub) { alertsSheet(); return; }
+      askPagePush('test', sub.toJSON(), function (r) { alertsSheet(r && r.ok && r.sent ? W('alerts.testSent', 'A test alert is on its way.') : (r && r.message) || W('alerts.testFailed', 'The test alert didn\u2019t go. Please try again.')); });
+    });
+  }
+  /** Mockup 1: once, after the page opens, when this phone could take alerts and hasn't been asked in 30 days. */
+  // Review 3: at most ONE try per phone in 30 days (one server call), never on a scanning page (it would cover a scan), and only
+  // when nothing was touched for the first seconds.
+  function alertsOffer() {
+    if (!pushOk() || Notification.permission !== 'default' || (isIOS && !standalone())) return;
+    if (!current || current.k === 'attendant' || current.k === 'helper') return;
+    var last = Number(store.get(ALERTS_ASKED) || 0);
+    if (last && Date.now() - last < 30 * 86400000) return;
+    var opened = Date.now();
+    setTimeout(function () {
+      if (sheet || !current || upd.last > opened) return;   // the person is busy on the page: not now
+      store.set(ALERTS_ASKED, Date.now());
+      askPagePush('key', null, function (r) { if (r && r.ok && r.key && !sheet) alertCard('offer'); });
+    }, 4000);
+  }
+
   /** "Are you sure?" in the look's sheet (never a browser pop-up): what will happen, then Yes or Cancel. */
   function sureSheet(text, yesText, yes, back) {
     var done = false;
@@ -846,6 +975,7 @@ a.kind="",a.url="",a.box&&(a.box.hidden=!0,h("")),document.documentElement.class
     if (current) rows.push(item('pulse', 'blue', W('app.reload', 'Reload my page'), function () { closeMenu(); openPage(); }));
     if (book.pages.length > 1) rows.push(item('swap', 'indigo', W('app.switch', 'Switch page'), function () { closeMenu(); chooser(); }));
     rows.push(item('links', 'green', W('app.addPage', 'Add another page'), function () { closeMenu(); addHelp(); }));
+    if (current) rows.push(item('bell', 'orange', W('app.alerts', 'Alerts'), function () { alertsSheet(); }));   // B-134
     body.appendChild(group('', rows));
     if (book.pages.length > 1) {
       var opts = book.pages.map(function (p) { return [p.t, label(p), p]; }).concat([['ask', W('app.askEach', 'Ask me each time'), null]]).map(function (o) {
