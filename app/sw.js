@@ -13,7 +13,7 @@
 */
 // Stage B (owner, Wed 4 Nov 2026): the build writes this install's version here (and a stamp of the manifest and icons), so
 // every install is a new helper on the phone. The store's name (CACHE) stays.
-var BUILD = 'p14_921b7a6c73f5-569e0da4';
+var BUILD = 'p14_e05fa7ca16fe-569e0da4';
 var CACHE = 'soj-app-2';   // polish18-B: the frame updates itself at a safe moment (polish18-C: the font is kept in it too)
 var NEXT = 'sj-next-page';  // the downloaded update, waiting for its safe moment (a name no real file has)
 var FILES = ['./', 'manifest.webmanifest', '../icon-192.png', '../icon-512.png'];
@@ -123,23 +123,37 @@ self.addEventListener('fetch', function (event) {
 });
 // End of app/sw.js
 
-// B-134 (the owner, Sun 22 Nov 2026): alerts. The academy's sender (cloud/push-worker) sends { title, body, tag }; this shows
-// it on the phone. A tap opens the app (an open copy is brought to the front), never an address from the alert itself.
+// B-134 (the owner, Sun 22 Nov 2026): alerts. The academy's sender (cloud/push-worker) sends { title, body, tag, id, r, go }; this
+// shows it on the phone. A tap opens the app (an open copy is brought to the front), never an address from the alert itself.
+// B-161: once shown, its id goes back to the academy's own web app (r: only a script.google.com /exec address), so the waiting
+// email is not sent; no link code is sent (this helper knows none). B-162: go names the part of the page the tap opens (a list).
+var PUSH_GO = ['marking', 'decisions', 'duty', 'home'];
+var RECEIPT = /^https:\/\/script\.google\.com\/(?:a\/macros\/[A-Za-z0-9.-]+\/s|macros\/s)\/[A-Za-z0-9_-]{10,120}\/exec$/;
 self.addEventListener('push', function (event) {
   var d = {};
   try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? String(event.data.text()).slice(0, 400) : '' }; }
   var tag = /^[a-z0-9-]{1,40}$/.test(String(d.tag || '')) ? d.tag : '';
-  var opts = { body: String(d.body || '').slice(0, 400), icon: '../icon-192.png', data: { at: Date.now() } };
+  var go = PUSH_GO.indexOf(d.go) !== -1 ? d.go : '';
+  var opts = { body: String(d.body || '').slice(0, 400), icon: '../icon-192.png', data: { at: Date.now(), go: go } };
   if (tag) { opts.tag = tag; opts.renotify = true; }
-  event.waitUntil(self.registration.showNotification(String(d.title || 'S.O.J. Academy').slice(0, 120), opts));
+  var id = /^[a-f0-9]{16}-[0-3]$/.test(String(d.id || '')) ? d.id : '';
+  var to = RECEIPT.test(String(d.r || '')) ? d.r : '';
+  event.waitUntil(self.registration.showNotification(String(d.title || 'S.O.J. Academy').slice(0, 120), opts).then(function () {
+    if (!id || !to) return null;
+    return fetch(to, { method: 'POST', mode: 'no-cors', credentials: 'omit', body: JSON.stringify({ api: 'pushSeen', id: id }) }).catch(function () { /* the email goes later */ });
+  }));
 });
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
   var home = new URL('./', self.location).href;
+  var go = event.notification.data && PUSH_GO.indexOf(event.notification.data.go) !== -1 ? event.notification.data.go : '';
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
     for (var i = 0; i < list.length; i++) {
-      if (list[i].url.indexOf(home) === 0 && 'focus' in list[i]) return list[i].focus();
+      if (list[i].url.indexOf(home) === 0 && 'focus' in list[i]) {
+        if (go) { try { list[i].postMessage({ sj: 'go', go: go }); } catch (e) { /* it opens home */ } }   // B-162: the open app opens that part
+        return list[i].focus();
+      }
     }
-    return self.clients.openWindow ? self.clients.openWindow(home) : null;
+    return self.clients.openWindow ? self.clients.openWindow(home + (go ? '#go=' + go : '')) : null;   // B-162: a word from the list only
   }));
 });
