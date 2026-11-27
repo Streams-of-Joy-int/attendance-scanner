@@ -2706,10 +2706,10 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
       document.addEventListener('visibilitychange', onVisibility);
       window.addEventListener('online', function () { if (queue.length) scheduleQueue(500); });
       setInterval(function () {
-        if (!document.hidden && !st.busy && !endFormOpen() && Date.now() - st.lastStatusAt > 55000) refreshStatus(false);
+        if (!document.hidden && !st.busy && !endFormOpen() && Date.now() - st.lastStatusAt > (window.SJ_STATUS_MS || 55000)) refreshStatus(false);
         if (queue.length && !st.sending && !st.queueTimer) scheduleQueue(100);
         if (!document.hidden && ui.dayTools && Date.now() - (st.dayToolsAt || 0) > 120000) { st.dayToolsAt = Date.now(); loadDayTools(); }   // the class day tools, every 2 minutes
-      }, 15000);
+      }, window.SJ_TICK_MS || 15000);   // (a test may tick quicker)
     }
 
     /** The class day tools (DayTools.gs, daytools.js): loaded after the page shows, and again after each button. */
@@ -5457,6 +5457,23 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
       st.classSheet = { cls: cls, body: sh.body };
     }
 
+    /**
+     * B-208 (the owner, Fri 27 Nov 2026: "when a role is changed the page should change INSTANTLY"): every refresh brings the
+     * server's mark of what this link may do (Roles.gs roleSig_). A different mark: the page asks for its data again and is
+     * drawn afresh, so a new duty's buttons come (and an old one's go) without a reload. A paper being taken in is finished
+     * first (the next refresh tries again). true when a redraw was started.
+     */
+    function roleChanged(sig) {
+      if (!D.roleSig) { D.roleSig = sig; return false; }   // a page kept from before the mark
+      if (sig === D.roleSig || st.roleBusy || hand || st.busy || endFormOpen()) return false;
+      st.roleBusy = true;
+      call('info', [], function (d) {
+        st.roleBusy = false;
+        if (d && d.ok && d.token && !d.posterOnly) { keepInfo(d); stopCamera(); if (!d.handIn && st.mode === 'handin') st.mode = 'check'; D = takeWording(d); build(); }
+      }, function () { st.roleBusy = false; });
+      return true;
+    }
+
     function refreshStatus(manual) {
       if (st.statusBusy || !D.ready) return;
       st.statusBusy = true;
@@ -5465,7 +5482,8 @@ icon:'refresh',label:W('phones.reset','Reset phones'),part:'ph-reset',onclick:fu
         st.statusBusy = false;
         if (!r) return;
         if (r.blocked) { blockedPage("This scanning link isn't active", 'Ask the head assistant for a new link.'); return; }
-        if (st.kiosk && r.kiosk && !r.kiosk.on) { exitKiosk(); return; }   // the head ended kiosk mode from their other phone (Kiosk.gs)
+        if (st.kiosk && r.kiosk && !r.kiosk.on) { exitKiosk(); return; }
+        if (r.ok && r.roleSig && roleChanged(r.roleSig)) return;   // B-208: a new role: the page fetches itself again and redraws   // the head ended kiosk mode from their other phone (Kiosk.gs)
         if (r.closed) {
           st.lastStatusAt = Date.now();
           if (D.isClassDay) { D.isClassDay = false; renderBanners(); renderDuty(); }
